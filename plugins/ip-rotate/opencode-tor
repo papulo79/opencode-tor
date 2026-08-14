@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OPENCODE_TOR_DIR="${OPENCODE_TOR_DIR:-$HOME/.opencode-tor}"
+OPENCODE_TOR_BIN="${OPENCODE_TOR_BIN:-$OPENCODE_TOR_DIR/bin/opencode}"
+OPENCODE_TOR_IMAGE="${OPENCODE_TOR_IMAGE:-dperson/torproxy}"
+OPENCODE_TOR_CONTAINER="${OPENCODE_TOR_CONTAINER:-ip-rotate-tor}"
+OPENCODE_TOR_TORRC="$OPENCODE_TOR_DIR/torrc"
+OPENCODE_TOR_CONFIG="$OPENCODE_TOR_DIR/opencode.json"
+READY_TIMEOUT="${OPENCODE_TOR_READY_TIMEOUT:-90}"
+HTTP_TUNNEL_PORT=8118
+SOCKS_PORT=9050
+
+if [ ! -x "$OPENCODE_TOR_BIN" ]; then
+  echo "opencode-tor: binario no encontrado: $OPENCODE_TOR_BIN (ejecuta el instalador primero)" >&2
+  exit 1
+fi
+if [ ! -f "$OPENCODE_TOR_TORRC" ] || [ ! -f "$OPENCODE_TOR_CONFIG" ]; then
+  echo "opencode-tor: falta torrc o opencode.json en $OPENCODE_TOR_DIR (reinstala)" >&2
+  exit 1
+fi
+if ! command -v docker >/dev/null 2>&1; then
+  echo "opencode-tor: docker no está instalado" >&2
+  exit 1
+fi
+
+start_tor() {
+  local running
+  started_by_us=0
+  running=$(docker inspect -f '{{.State.Running}}' "$OPENCODE_TOR_CONTAINER" 2>/dev/null || echo "")
+  if [ "$running" = "true" ]; then
+    echo "opencode-tor: contenedor Tor ya corriendo"
+    return 0
+  fi
+  echo "opencode-tor: arrancando contenedor Tor ($OPENCODE_TOR_IMAGE)..."
+  if docker inspect "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1; then
+    docker start "$OPENCODE_TOR_CONTAINER" >/dev/null
+    started_by_us=1
+  else
+    docker run -d --rm --network host --name "$OPENCODE_TOR_CONTAINER" \
+      -v "$OPENCODE_TOR_TORRC:/tmp/torrc:ro" \
+      --entrypoint tor "$OPENCODE_TOR_IMAGE" -f /tmp/torrc >/dev/null
+    started_by_us=1
+  fi
+}
+
+wait_ready() {
+  local elapsed=0
+  echo -n "opencode-tor: esperando a Tor"
+  while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
+    if nc -z 127.0.0.1 "$SOCKS_PORT" 2>/dev/null && \
+       nc -z 127.0.0.1 "$HTTP_TUNNEL_PORT" 2>/dev/null; then
+      echo " listo ($elapsed s)"
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+    echo -n "."
+  done
+  echo " TIMEOUT tras ${READY_TIMEOUT}s" >&2
+  docker logs "$OPENCODE_TOR_CONTAINER" 2>&1 | tail -5 >&2
+  return 1
+}
+
+stop_tor() {
+  if [ "$started_by_us" != "1" ]; then return 0; fi
+  if [ "${OPENCODE_TOR_KEEP:-}" = "1" ]; then return 0; fi
+  echo "opencode-tor: parando contenedor Tor"
+  docker stop "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1 || true
+}
+
+trap stop_tor EXIT
+
+start_tor
+if [ "${OPENCODE_TOR_SKIP_READY:-}" != "1" ]; then
+  wait_ready
+fi
+
+export HTTP_PROXY="http://127.0.0.1:$HTTP_TUNNEL_PORT"
+export HTTPS_PROXY="$HTTP_PROXY"
+export ALL_PROXY="$HTTP_PROXY"
+export NO_PROXY="127.0.0.1,localhost"
+export OPENCODE_CONFIG="$OPENCODE_TOR_CONFIG"
+
+"$OPENCODE_TOR_BIN" "$@"
