@@ -74,7 +74,12 @@ stop_tor() {
   if [ "$started_by_us" != "1" ]; then return 0; fi
   if [ "${OPENCODE_TOR_KEEP:-}" = "1" ]; then return 0; fi
   local others
-  others=$(pgrep -f "opencode-tor" 2>/dev/null | grep -v "$$" | wc -l || true)
+  others=0
+  for pid in $(pgrep -f "opencode-tor" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] && continue
+    kill -0 "$pid" 2>/dev/null || continue
+    others=$((others + 1))
+  done
   if [ "$others" -gt 0 ]; then
     echo "opencode-tor: otra sesión opencode-tor sigue activa, no paro el contenedor"
     return 0
