@@ -1,11 +1,13 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { parseConfig } from "./src/config"
 import { isIpBlocked } from "./src/detector"
+import { createRotator } from "./src/rotator"
 import { createState } from "./src/state"
 
 export const server = async (input: PluginInput, options?: PluginOptions): Promise<Hooks> => {
   const config = parseConfig(options)
   const state = createState()
+  const rotator = createRotator(config)
 
   console.log("[ip-rotate] plugin loaded")
 
@@ -32,7 +34,18 @@ export const server = async (input: PluginInput, options?: PluginOptions): Promi
 
       state.rotationsBySession.set(sessionID, used + 1)
       state.lastRotationAt = now
-      console.log(`[ip-rotate] rate limit detectado en sesión ${sessionID}`)
+
+      const previous = state.lastKnownIp
+      console.log(`[ip-rotate] rate limit detectado en sesión ${sessionID}, rotando IP...`)
+      const next = await rotator.rotate()
+
+      if (next === undefined) {
+        console.log(`[ip-rotate] rotación fallida en sesión ${sessionID}: se mantiene el error original`)
+        return
+      }
+
+      state.lastKnownIp = next
+      console.log(`[ip-rotate] IP rotada: ${previous ?? "desconocida"} -> ${next}`)
     },
   }
 }

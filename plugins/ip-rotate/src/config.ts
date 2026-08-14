@@ -1,7 +1,7 @@
 import type { PluginOptions } from "@opencode-ai/plugin"
 
 export type Config = {
-  socksProxy: string
+  proxyUrl: string
   controlPort: number
   controlPassword: string
   cooldownMs: number
@@ -12,7 +12,7 @@ export type Config = {
 }
 
 const DEFAULTS: Config = {
-  socksProxy: "socks5h://127.0.0.1:9050",
+  proxyUrl: "http://127.0.0.1:8118",
   controlPort: 9051,
   controlPassword: "",
   cooldownMs: 15000,
@@ -32,7 +32,7 @@ export function parseConfig(options: PluginOptions = {}): Config {
     : undefined
 
   return {
-    socksProxy: str("socksProxy") ?? DEFAULTS.socksProxy,
+    proxyUrl: str("proxyUrl") ?? DEFAULTS.proxyUrl,
     controlPort: num("controlPort") ?? DEFAULTS.controlPort,
     controlPassword: str("controlPassword") ?? DEFAULTS.controlPassword,
     cooldownMs: num("cooldownMs") ?? DEFAULTS.cooldownMs,

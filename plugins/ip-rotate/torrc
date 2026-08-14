@@ -1,4 +1,5 @@
 SocksPort 9050
+HTTPTunnelPort 8118
 ControlPort 9051
 CookieAuthentication 0
 HashedControlPassword 16:0000000000000000000000000000000000000000000000000000
