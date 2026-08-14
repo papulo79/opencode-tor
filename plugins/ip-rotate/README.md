@@ -164,3 +164,54 @@ sesión, estrategia de reanudación) cambia.
 | Rate limits muy frecuentes (p. ej. `session.status: retry` en bucle) | El cooldown corto deja rotar demasiado | Sube `cooldownMs`; el cooldown global es el cortafuegos |
 | Las rotaciones se agotan en una sesión | Se alcanzó `maxRotationsPerSession` | Ajusta el límite o espera a que la sesión pase a `idle` (se resetea el contador) |
 
+## opencode-tor (lanzador aislado)
+
+Instala un comando global `opencode-tor` con su propia copia de opencode, su
+propio contenedor docker de Tor y el plugin `ip-rotate` ya registrado. No toca
+el opencode instalado en `~/.opencode/bin` ni tu config global.
+
+### Instalación
+
+```bash
+# Generar el instalador (desde el repo):
+./plugins/ip-rotate/build-install.sh
+
+# Servirlo/hostearlo y ejecutarlo:
+curl -fsSL https://<host>/install-opencode-tor.sh | bash
+# o localmente:
+./plugins/ip-rotate/install-opencode-tor.sh
+```
+
+Flags: `--version <v>`, `--binary <path>`, `--no-modify-path`.
+
+### Uso
+
+```bash
+opencode-tor                    # TUI con Tor + plugin ip-rotate
+opencode-tor run "..."          # run headless con Tor
+```
+
+El wrapper: arranca el contenedor `ip-rotate-tor` (`dperson/torproxy`,
+`--network host`), espera readiness, exporta `HTTP_PROXY`/`HTTPS_PROXY`
+`=http://127.0.0.1:8118`, inyecta `OPENCODE_CONFIG` y ejecuta su binario. Al
+salir, para el contenedor.
+
+### Personalización
+
+| Variable | Default | Efecto |
+| -------- | ------- | ------ |
+| `OPENCODE_TOR_DIR` | `$HOME/.opencode-tor` | Directorio de instalación |
+| `OPENCODE_TOR_BIN` | `$OPENCODE_TOR_DIR/bin/opencode` | Binario a ejecutar |
+| `OPENCODE_TOR_IMAGE` | `dperson/torproxy` | Imagen docker de Tor |
+| `OPENCODE_TOR_CONTAINER` | `ip-rotate-tor` | Nombre del contenedor |
+| `OPENCODE_TOR_READY_TIMEOUT` | `90` | Timeout de readiness (s) |
+| `OPENCODE_TOR_SKIP_READY` | `1` = saltar espera de readiness | Para tests/depuración |
+| `OPENCODE_TOR_KEEP` | `1` = no parar al salir | Útil para depuración |
+
+### Tests
+
+```bash
+plugins/ip-rotate/test/generator.test.sh
+plugins/ip-rotate/test/wrapper.test.sh
+```
+
