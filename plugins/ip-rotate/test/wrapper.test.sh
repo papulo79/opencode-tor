@@ -32,6 +32,8 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/opencode" <<'EOF'
 #!/usr/bin/env bash
 echo "opencode llamado con: $*"
+echo "HTTP_PROXY=$HTTP_PROXY"
+echo "OPENCODE_CONFIG=$OPENCODE_CONFIG"
 EOF
 chmod +x "$WORK/bin/opencode"
 cat > "$WORK/torrc" <<'EOF'
@@ -56,6 +58,10 @@ PATH="$WORK:$PATH" \
 
 grep -q "opencode llamado con: run hola mundo" "$WORK/out.log" \
   || { echo "FAIL: opencode no ejecutado con args"; cat "$WORK/out.log"; exit 1; }
+grep -q "HTTP_PROXY=http://127.0.0.1:8118" "$WORK/out.log" \
+  || { echo "FAIL: no se exportó HTTP_PROXY"; cat "$WORK/out.log"; exit 1; }
+grep -q "OPENCODE_CONFIG=$WORK/opencode.json" "$WORK/out.log" \
+  || { echo "FAIL: no se exportó OPENCODE_CONFIG"; cat "$WORK/out.log"; exit 1; }
 grep -q "docker run" "$WORK/docker.log" \
   || { echo "FAIL: no se invocó docker run"; cat "$WORK/docker.log"; exit 1; }
 echo "PASS: wrapper test"
