@@ -1,0 +1,5 @@
+SocksPort 9050
+ControlPort 9051
+CookieAuthentication 0
+HashedControlPassword 16:0000000000000000000000000000000000000000000000000000
+MaxCircuitDirtiness 86400
