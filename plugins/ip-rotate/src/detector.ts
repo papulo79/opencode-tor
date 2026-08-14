@@ -3,26 +3,39 @@ export type SessionEvent = {
   properties: Record<string, unknown>
 }
 
+function isString(value: unknown): value is string {
+  return typeof value === "string"
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  if (value === null || typeof value !== "object") return undefined
+  const record: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(value)) record[key] = val
+  return record
+}
+
 function extractMessages(event: SessionEvent): string[] {
   if (event.type === "session.error") {
-    const error = event.properties?.error as Record<string, unknown> | undefined
-    if (error && typeof error.message === "string") return [error.message]
+    const error = asRecord(event.properties.error)
+    if (error && isString(error.message)) return [error.message]
   }
 
   if (event.type === "session.status") {
-    const status = event.properties?.status as Record<string, unknown> | undefined
-    if (status?.type === "retry" && typeof status.message === "string") return [status.message]
+    const status = asRecord(event.properties.status)
+    if (status?.type === "retry" && isString(status.message)) return [status.message]
   }
 
   return []
 }
 
 export function isIpBlocked(event: unknown, patterns: string[]): boolean {
-  if (!event || typeof event !== "object") return false
-  const e = event as SessionEvent
-  if (typeof e.type !== "string" || !e.properties || typeof e.properties !== "object") return false
+  const record = asRecord(event)
+  const type = record?.type
+  const props = asRecord(record?.properties)
+  if (!isString(type) || !props) return false
 
-  const haystacks = [e.type, ...extractMessages(e)].filter((s): s is string => typeof s === "string")
+  const sessionEvent: SessionEvent = { type, properties: props }
+  const haystacks = [sessionEvent.type, ...extractMessages(sessionEvent)].filter(isString)
   if (haystacks.length === 0) return false
 
   const lower = patterns.map((p) => p.toLowerCase())

@@ -22,13 +22,21 @@ const DEFAULTS: Config = {
   errorPatterns: ["429", "rate limit", "too many requests", "free limit reached", "overloaded"],
 }
 
+function isString(value: unknown): value is string {
+  return typeof value === "string"
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === "number"
+}
+
 export function parseConfig(options: PluginOptions = {}): Config {
-  const str = (key: string) => (typeof options[key] === "string" ? (options[key] as string) : undefined)
-  const num = (key: string) => (typeof options[key] === "number" ? (options[key] as number) : undefined)
+  const str = (key: string) => (isString(options[key]) ? options[key] : undefined)
+  const num = (key: string) => (isNumber(options[key]) ? options[key] : undefined)
 
   const resume = str("resume")
   const patterns = Array.isArray(options.errorPatterns)
-    ? options.errorPatterns.filter((p): p is string => typeof p === "string")
+    ? options.errorPatterns.filter(isString)
     : undefined
 
   return {

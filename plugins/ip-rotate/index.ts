@@ -1,14 +1,18 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { parseConfig } from "./src/config"
 import { isIpBlocked } from "./src/detector"
-import { createResumer } from "./src/resumer"
+import type { Rotator } from "./src/rotator"
 import { createRotator } from "./src/rotator"
+import { createResumer } from "./src/resumer"
 import { createState } from "./src/state"
 
-export const server = async (input: PluginInput, options?: PluginOptions): Promise<Hooks> => {
+// Seam de test: permite inyectar un Rotator (p. ej. stub) sin tocar detector/resumer.
+export type IpRotateOptions = PluginOptions & { rotator?: Rotator }
+
+export const server = async (input: PluginInput, options?: IpRotateOptions): Promise<Hooks> => {
   const config = parseConfig(options)
   const state = createState()
-  const rotator = createRotator(config)
+  const rotator = options?.rotator ?? createRotator(config)
   const resumer = createResumer(config, input.client)
 
   console.log("[ip-rotate] plugin loaded")
@@ -16,11 +20,19 @@ export const server = async (input: PluginInput, options?: PluginOptions): Promi
   return {
     dispose: async () => {},
     event: async ({ event }) => {
-      if (!isIpBlocked(event, config.errorPatterns)) return
-
       const properties = (event.properties ?? {}) as Record<string, unknown>
       const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
       if (!sessionID) return
+
+      // Tras recuperación (idle) se resetea el contador de rotaciones de la sesión.
+      if (isIdle(event)) {
+        if (state.rotationsBySession.delete(sessionID)) {
+          console.log(`[ip-rotate] sesión ${sessionID} idle tras recuperación: contador reseteado`)
+        }
+        return
+      }
+
+      if (!isIpBlocked(event, config.errorPatterns)) return
 
       const now = Date.now()
       if (now - state.lastRotationAt < config.cooldownMs) {
@@ -59,4 +71,17 @@ export const server = async (input: PluginInput, options?: PluginOptions): Promi
       }
     },
   }
+}
+
+function isIdle(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false
+  const e = event as { type?: string; properties?: Record<string, unknown> }
+  if (e.type === "session.idle") return true
+  if (e.type !== "session.status") return false
+  const status = e.properties?.status
+  return isRecord(status) && status.type === "idle"
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object"
 }

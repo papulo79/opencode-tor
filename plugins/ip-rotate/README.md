@@ -118,4 +118,49 @@ printf 'AUTHENTICATE "mi-password-secreto"\r\nSIGNAL NEWNYM\r\nQUIT\r\n' | nc 12
 sleep 12 && curl -s -x http://127.0.0.1:8118 https://api.ipify.org
 ```
 
-*(La tabla de opciones se completa en fases siguientes.)*
+## Cómo añadir otro Rotator
+
+El plugin está descompuesto en módulos independientes e intercambiables
+(`detector`, `rotator`, `resumer`, `state`, `config`). Para rotar por otro medio
+(proxies SOCKS5 comerciales, VPN de sistema, etc.) solo hay que sustituir el
+**módulo `rotator`**, sin tocar `detector` ni `resumer`:
+
+1. Implementa la interfaz en `src/rotator.ts` (o un fichero nuevo):
+
+   ```ts
+   export interface Rotator {
+     currentIp(): Promise<string | undefined>
+     rotate(): Promise<string | undefined>
+   }
+   ```
+
+   - `currentIp()` devuelve la IP de salida actual (o `undefined` si no se puede).
+   - `rotate()` cambia la IP de salida y devuelve la nueva (o `undefined` si falló).
+   - **Nunca lances**: devuelve `undefined` y loguea. Un fallo del rotator degrada
+     a un aviso, nunca rompe la sesión.
+
+2. Cambia el factory en `src/rotator.ts`:
+
+   ```ts
+   export function createRotator(config: Config): Rotator {
+     return new MiRotator(config) // en vez de new TorControlRotator(config)
+   }
+   ```
+
+3. Añade a `config.ts` las opciones que necesite tu rotator.
+
+Nada del resto del plugin (detección de rate limit, cooldown, contador por
+sesión, estrategia de reanudación) cambia.
+
+## Troubleshooting
+
+| Síntoma | Causa probable | Solución |
+| ------- | -------------- | -------- |
+| "rotación fallida" en los logs | Tor caído, puerto control inaccesible | Verifica `nc -z 127.0.0.1 9050` y `9051`; arranca con `start-tor.sh` |
+| `AUTHENTICATE` rechazado (`515`) | `controlPassword` no coincide con el hash de `torrc` | Regenera el hash (`tor --hash-password`) y actualiza `opencode.json` |
+| "IP rotada: X -> X" (misma IP) | NEWNYM no garantiza salida distinta al instante | El plugin reintenta una vez y aplica cooldown; repite la rotación más tarde |
+| La IP no cambia nunca | El servicio destino bloquea IPs de salida Tor | Usa otro `Rotator` (guía de extensión de arriba) |
+| `UnsupportedProxyProtocol` | Bun 1.3.14 no soporta proxies `socks5://` | No uses `socks5://`; el plugin usa el túnel HTTP CONNECT (`HTTPTunnelPort 8118`) |
+| Rate limits muy frecuentes (p. ej. `session.status: retry` en bucle) | El cooldown corto deja rotar demasiado | Sube `cooldownMs`; el cooldown global es el cortafuegos |
+| Las rotaciones se agotan en una sesión | Se alcanzó `maxRotationsPerSession` | Ajusta el límite o espera a que la sesión pase a `idle` (se resetea el contador) |
+

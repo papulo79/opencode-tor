@@ -65,33 +65,41 @@ class TorControlRotator implements Rotator {
       let buffer = ""
       const pending: Array<(ok: boolean) => void> = []
 
-      const socket = await Bun.connect({
-        hostname: "127.0.0.1",
-        port: config.controlPort,
-        socket: {
-          data(socket, data) {
-            buffer += new TextDecoder().decode(data)
-            let idx: number
-            while ((idx = buffer.indexOf("\r\n")) !== -1) {
-              const line = buffer.slice(0, idx)
-              buffer = buffer.slice(idx + 2)
-              const isOk = line.startsWith("250")
-              if (!line.startsWith("250-")) {
-                const resolve = pending.shift()
-                if (resolve) resolve(isOk)
+      const socket = await Promise.race([
+        Bun.connect({
+          hostname: "127.0.0.1",
+          port: config.controlPort,
+          socket: {
+            data(socket, data) {
+              buffer += new TextDecoder().decode(data)
+              let idx: number
+              while ((idx = buffer.indexOf("\r\n")) !== -1) {
+                const line = buffer.slice(0, idx)
+                buffer = buffer.slice(idx + 2)
+                const isOk = line.startsWith("250")
+                if (!line.startsWith("250-")) {
+                  const resolve = pending.shift()
+                  if (resolve) resolve(isOk)
+                }
               }
-            }
+            },
+            open() {},
+            error() {},
+            close() {},
           },
-          open() {},
-          error() {},
-          close() {},
-        },
-      })
+        }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error("connect timeout")), 5000)),
+      ])
 
       const send = (cmd: string) =>
         new Promise<boolean>((resolve) => {
           pending.push(resolve)
           socket.write(cmd)
+          setTimeout(() => {
+            const idx = pending.indexOf(resolve)
+            if (idx !== -1) pending.splice(idx, 1)
+            resolve(false)
+          }, 5000)
         })
 
       const ok = await send(`AUTHENTICATE "${config.controlPassword || ""}"\r\n`)

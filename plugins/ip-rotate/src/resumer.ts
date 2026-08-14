@@ -31,8 +31,8 @@ class RepromptResumer implements Resumer {
       }
 
       const parts = lastUser.parts
-        .filter((part) => part.type === "text" && typeof part.text === "string")
-        .map((part) => ({ type: "text" as const, text: (part as { text: string }).text }))
+        .filter(isTextPart)
+        .map((part) => ({ type: "text" as const, text: part.text }))
 
       if (parts.length === 0) {
         console.log(`[ip-rotate] último mensaje de usuario de ${sessionID} sin texto: no reanudo`)
@@ -46,4 +46,13 @@ class RepromptResumer implements Resumer {
       console.log(`[ip-rotate] no pude reanudar sesión ${sessionID}: ${message}`)
     }
   }
+}
+
+function isTextPart(part: unknown): part is { type: "text"; text: string } {
+  return (
+    typeof part === "object" &&
+    part !== null &&
+    (part as { type?: unknown }).type === "text" &&
+    typeof (part as { text?: unknown }).text === "string"
+  )
 }
