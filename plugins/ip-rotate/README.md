@@ -16,7 +16,7 @@ Tor; el resto del sistema no se ve afectado.
 > Tor expone además un **túnel HTTP CONNECT** vía `HTTPTunnelPort 8118`, que Bun
 > sí honra. El plugin verifica la IP por ese túnel y rota por el puerto de control
 > `9051` (TCP plano, sin cambios). `start-tor.sh` exporta
-> `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:8118` + `NO_PROXY=127.0.0.1,localhost`.
+> `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:8118` + `NO_PROXY=127.0.0.1,localhost,::1`.
 
 ## Requisitos
 
@@ -59,7 +59,7 @@ Arranca opencode con el proxy Tor activo:
 El script:
 1. Arranca `tor -f torrc` si el puerto 9050 no responde.
 2. Espera readiness.
-3. Exporta `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:8118` y `NO_PROXY=127.0.0.1,localhost`.
+3. Exporta `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:8118` y `NO_PROXY=127.0.0.1,localhost,::1`.
 4. Ejecuta el comando que reciba como argumentos (`bun dev` en este caso).
 
 Cualquier comando que reciba como argumentos se ejecutará bajo el proxy:

@@ -44,12 +44,20 @@ start_tor() {
   fi
 }
 
+port_open() {
+  local port="$1"
+  if command -v nc >/dev/null 2>&1; then
+    nc -z 127.0.0.1 "$port" 2>/dev/null
+  else
+    bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null
+  fi
+}
+
 wait_ready() {
   local elapsed=0
   echo -n "opencode-tor: esperando a Tor"
   while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
-    if nc -z 127.0.0.1 "$SOCKS_PORT" 2>/dev/null && \
-       nc -z 127.0.0.1 "$HTTP_TUNNEL_PORT" 2>/dev/null; then
+    if port_open "$SOCKS_PORT" && port_open "$HTTP_TUNNEL_PORT"; then
       echo " listo ($elapsed s)"
       return 0
     fi
@@ -65,6 +73,12 @@ wait_ready() {
 stop_tor() {
   if [ "$started_by_us" != "1" ]; then return 0; fi
   if [ "${OPENCODE_TOR_KEEP:-}" = "1" ]; then return 0; fi
+  local others
+  others=$(pgrep -f "opencode-tor" 2>/dev/null | grep -v "$$" | wc -l || true)
+  if [ "$others" -gt 0 ]; then
+    echo "opencode-tor: otra sesión opencode-tor sigue activa, no paro el contenedor"
+    return 0
+  fi
   echo "opencode-tor: parando contenedor Tor"
   docker stop "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1 || true
 }
@@ -79,7 +93,7 @@ fi
 export HTTP_PROXY="http://127.0.0.1:$HTTP_TUNNEL_PORT"
 export HTTPS_PROXY="$HTTP_PROXY"
 export ALL_PROXY="$HTTP_PROXY"
-export NO_PROXY="127.0.0.1,localhost"
+export NO_PROXY="127.0.0.1,localhost,::1"
 export OPENCODE_CONFIG="$OPENCODE_TOR_CONFIG"
 
 "$OPENCODE_TOR_BIN" "$@"
