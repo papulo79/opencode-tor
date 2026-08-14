@@ -38,6 +38,6 @@ export HTTP_PROXY="$PROXY"
 export HTTPS_PROXY="$PROXY"
 export ALL_PROXY="$PROXY"
 # Mantener el servidor interno de opencode (localhost) fuera del proxy.
-export NO_PROXY="127.0.0.1,localhost"
+export NO_PROXY="127.0.0.1,localhost,::1"
 
 exec "$@"
