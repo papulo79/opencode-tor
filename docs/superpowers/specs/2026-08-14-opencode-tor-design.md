@@ -49,7 +49,7 @@ del opencode normal instalado en `~/.opencode/bin`.
 │   └── opencode-tor          # wrapper ejecutable
 ├── plugins/
 │   └── ip-rotate/            # plugin desplegado (index.ts, src/, package.json, node_modules)
-├── torrc                     # puertos 9050/8118/9051 + hash del password aleatorio + MaxCircuitDirtiness 86400
+├── torrc                     # puertos 9050/8118/9051 en 127.0.0.1 + hash del password aleatorio + MaxCircuitDirtiness 86400
 └── opencode.json             # {"plugin": [["file://<abs>/plugins/ip-rotate", {"controlPassword": "<aleatorio>"}]]}
 ```
 
@@ -70,7 +70,8 @@ aleatorio generado. El generador solo lo empaqueta como plantilla.
    (`opencode-linux-x64.tar.gz`, etc.) a `~/.opencode-tor/bin/opencode`.
    Soporta `--version` y `--binary` como el instalador oficial.
 2. Extrae el plugin embebido a `~/.opencode-tor/plugins/ip-rotate/`.
-3. `bun install` en el dir del plugin para resolver `@opencode-ai/plugin`.
+3. `bun install` en el dir del plugin para resolver `@opencode-ai/plugin`
+   (requiere `bun` en el host; si no está, error claro indicando instalarlo).
 4. Genera password aleatorio (`openssl rand -hex 16` o fallback a `/dev/urandom`),
    lo hash-ea con `tor --hash-password` (con fallback a ejecutarlo vía el propio
    contenedor docker si `tor` no está en el host), y escribe `~/.opencode-tor/torrc`.
@@ -87,24 +88,47 @@ Recibe los args que se le pasen (p. ej. sin args para el TUI, o `run "..."`,
 
 1. Si no hay contenedor `ip-rotate-tor` corriendo: `docker run -d --rm --network host`
    con la imagen `dperson/torproxy`, entrypoint `tor`, `-f /tmp/torrc`, montando
-   el `~/.opencode-tor/torrc` en modo lectura. También soporta el caso de que el
-   contenedor exista parado: `docker start` en vez de `docker run`.
+   el `~/.opencode-tor/torrc` en modo lectura. Si ya está corriendo (levantado por
+   otra sesión `opencode-tor` concurrente), lo reusa tal cual. No existe el caso
+   "contenedor parado": con `--rm` un contenedor parado se elimina solo, así que
+   el wrapper solo distingue corriendo / no existe.
 2. Espera readiness: poll a `nc -z 127.0.0.1 9050` y al puerto de túnel HTTP
-   `8118`, más un margen de bootstrap de red (reusar la lógica de espera
-   validada en el E2E).
+   `8118` (con fallback a `bash` y `/dev/tcp` si `nc` no está instalado), más un
+   margen de bootstrap de red (reusar la lógica de espera validada en el E2E).
 3. Exporta `HTTP_PROXY`/`HTTPS_PROXY=http://127.0.0.1:8118`,
-   `ALL_PROXY=http://127.0.0.1:8118`, `NO_PROXY=127.0.0.1,localhost` y
-   `OPENCODE_CONFIG=$HOME/.opencode-tor/opencode.json`.
-4. Ejecuta `$HOME/.opencode-tor/bin/opencode` con los args recibidos
-   (`exec "$@"`).
-5. Al salir del proceso de opencode: `docker stop ip-rotate-tor` (trap en EXIT).
-   Como `docker run` usa `--rm`, el contenedor además se elimina al parar.
+   `ALL_PROXY=http://127.0.0.1:8118`, `NO_PROXY=127.0.0.1,localhost,::1` y
+   `OPENCODE_CONFIG=$HOME/.opencode-tor/opencode.json`. Verificar en el E2E que
+   Bun honra `HTTPS_PROXY` en `fetch` para el tráfico TLS vía CONNECT.
+4. Ejecuta `$HOME/.opencode-tor/bin/opencode` como proceso hijo con los args
+   recibidos (NO `exec`: `exec` reemplazaría el shell y el `trap EXIT` del paso 5
+   nunca se ejecutaría). El wrapper hace `wait` y propaga el exit code.
+5. Al salir del proceso de opencode: para el contenedor Tor solo si no queda
+   ningún otro proceso `opencode-tor` vivo (`pgrep -f` sobre el wrapper). Así, en
+   sesiones concurrentes el contenedor lo levanta la primera y lo para la última.
+   La carrera residual (dos wrappers saliendo a la vez) deja a lo sumo un
+   contenedor huérfano que el siguiente arranque reusa; el contenedor usa `--rm`,
+   así que al pararlo además se elimina.
+
+### Sesiones concurrentes
+
+Varias sesiones `opencode-tor` comparten el mismo contenedor sin problema
+funcional: el proxy Tor es stateless por conexión y el `ControlPort` acepta
+múltiples clientes. La consecuencia es que todas comparten la IP de salida y una
+rotación de circuito las afecta a todas (aceptable para este caso de uso). No se
+usa refcounting con fichero de contador: un wrapper muerto con SIGKILL dejaría el
+contador sucio y el contenedor no se pararía nunca; la comprobación por
+`pgrep` degrada a un contenedor huérfano reutilizable, que es benigno.
 
 ## Detalles técnicos clave
 
 - **`--network host`** es obligatorio (validado en el E2E de `specs/ip-rotate.md`):
   en modo bridge el host de este usuario no alcanza los relays de Tor
   ("No route to host"). Con `--network host` el bootstrap llega al 100%.
+- **Bind a localhost en el `torrc`**: como se usa `--network host`, los puertos
+  del `torrc` deben ir a `127.0.0.1` (`SocksPort 127.0.0.1:9050`,
+  `HTTPTunnelPort 127.0.0.1:8118`, `ControlPort 127.0.0.1:9051`); si no, el
+  proxy SOCKS/HTTP (sin auth) y el puerto de control quedarían expuestos a la
+  LAN. Esto aplica también al `torrc` de referencia de `plugins/ip-rotate/torrc`.
 - **Bun 1.3.14 no soporta proxies socks5** en `fetch`. El plugin usa el túnel
   HTTP CONNECT que Tor expone en `HTTPTunnelPort 8118`; por eso el wrapper
   exporta `HTTP_PROXY=http://127.0.0.1:8118`, no `socks5://127.0.0.1:9050`.
@@ -138,5 +162,7 @@ opencode-tor --version          # delega al binario opencode
 - `tor --hash-password` requiere el binario `tor`; en hosts sin Tor nativo se
   delega al contenedor docker (`docker run --rm --entrypoint tor dperson/torproxy --hash-password ...`).
 - Docker no disponible → `opencode-tor` avisa y sale con error claro.
+- Dos wrappers saliendo a la vez pueden dejar un contenedor huérfano (carrera
+  del `pgrep`); lo reusará el siguiente arranque, sin impacto funcional.
 - El binario opencode y el plugin pueden desincronizarse de versiones; el
   instalador siempre empaqueta el plugin desde el repo en el momento de generar.
