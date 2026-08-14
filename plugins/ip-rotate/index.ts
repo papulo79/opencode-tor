@@ -1,6 +1,7 @@
 import type { Hooks, PluginInput, PluginOptions } from "@opencode-ai/plugin"
 import { parseConfig } from "./src/config"
 import { isIpBlocked } from "./src/detector"
+import { createResumer } from "./src/resumer"
 import { createRotator } from "./src/rotator"
 import { createState } from "./src/state"
 
@@ -8,6 +9,7 @@ export const server = async (input: PluginInput, options?: PluginOptions): Promi
   const config = parseConfig(options)
   const state = createState()
   const rotator = createRotator(config)
+  const resumer = createResumer(config, input.client)
 
   console.log("[ip-rotate] plugin loaded")
 
@@ -46,6 +48,15 @@ export const server = async (input: PluginInput, options?: PluginOptions): Promi
 
       state.lastKnownIp = next
       console.log(`[ip-rotate] IP rotada: ${previous ?? "desconocida"} -> ${next}`)
+      console.log("[ip-rotate] IP rotada, reanudando sesión")
+      await resumer.resume(sessionID)
+      try {
+        await input.client.app.log({
+          body: { service: "ip-rotate", level: "info", message: `IP rotada, reanudando sesión ${sessionID}` },
+        })
+      } catch {
+        // La notificación es best-effort; nunca romper la sesión.
+      }
     },
   }
 }
