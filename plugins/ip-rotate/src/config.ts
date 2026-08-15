@@ -19,7 +19,7 @@ const DEFAULTS: Config = {
   maxRotationsPerSession: 5,
   resume: "reprompt",
   verifyUrl: "https://api.ipify.org",
-  errorPatterns: ["429", "rate limit", "too many requests", "free limit reached", "overloaded"],
+  errorPatterns: ["429", "rate limit", "too many requests", "free limit reached", "free usage exceeded", "overloaded"],
 }
 
 function isString(value: unknown): value is string {
