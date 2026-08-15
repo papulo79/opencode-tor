@@ -34,6 +34,7 @@ cat > "$WORK/bin/opencode" <<'EOF'
 echo "opencode llamado con: $*"
 echo "HTTP_PROXY=$HTTP_PROXY"
 echo "OPENCODE_CONFIG=$OPENCODE_CONFIG"
+echo "OPENCODE_TUI_CONFIG=$OPENCODE_TUI_CONFIG"
 EOF
 chmod +x "$WORK/bin/opencode"
 cat > "$WORK/torrc" <<'EOF'
@@ -44,6 +45,9 @@ HashedControlPassword 16:0000000000000000000000000000000000000000000000000000
 MaxCircuitDirtiness 86400
 EOF
 cat > "$WORK/opencode.json" <<'EOF'
+{ "plugin": [] }
+EOF
+cat > "$WORK/tui.json" <<'EOF'
 { "plugin": [] }
 EOF
 
@@ -62,6 +66,10 @@ grep -q "HTTP_PROXY=http://127.0.0.1:8118" "$WORK/out.log" \
   || { echo "FAIL: no se exportó HTTP_PROXY"; cat "$WORK/out.log"; exit 1; }
 grep -q "OPENCODE_CONFIG=$WORK/opencode.json" "$WORK/out.log" \
   || { echo "FAIL: no se exportó OPENCODE_CONFIG"; cat "$WORK/out.log"; exit 1; }
+grep -q "OPENCODE_TUI_CONFIG=$WORK/tui.json" "$WORK/out.log" \
+  || { echo "FAIL: no se exportó OPENCODE_TUI_CONFIG"; cat "$WORK/out.log"; exit 1; }
+grep -q "█▀▀█" "$WORK/out.log" \
+  || { echo "FAIL: no se imprimió el banner"; cat "$WORK/out.log"; exit 1; }
 grep -q "docker run" "$WORK/docker.log" \
   || { echo "FAIL: no se invocó docker run"; cat "$WORK/docker.log"; exit 1; }
 echo "PASS: wrapper test"

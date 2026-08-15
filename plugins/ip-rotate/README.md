@@ -205,8 +205,10 @@ opencode-tor run "..."          # run headless con Tor
 
 El wrapper: arranca el contenedor `ip-rotate-tor` (`dperson/torproxy`,
 `--network host`), espera readiness, exporta `HTTP_PROXY`/`HTTPS_PROXY`
-`=http://127.0.0.1:8118`, inyecta `OPENCODE_CONFIG` y ejecuta su binario. Al
-salir, para el contenedor.
+`=http://127.0.0.1:8118`, inyecta `OPENCODE_CONFIG` + `OPENCODE_TUI_CONFIG` y
+ejecuta su binario. Imprime un banner ASCII `opencode-tor` antes del TUI, y un
+plugin de TUI sustituye el logo de la home por `opencode-tor` (así sabes que
+estás en el entorno Tor). Al salir, para el contenedor.
 
 ### Personalización
 
@@ -219,6 +221,7 @@ salir, para el contenedor.
 | `OPENCODE_TOR_READY_TIMEOUT` | `90` | Timeout de readiness (s) |
 | `OPENCODE_TOR_SKIP_READY` | `1` = saltar espera de readiness | Para tests/depuración |
 | `OPENCODE_TOR_KEEP` | `1` = no parar al salir | Útil para depuración |
+| `OPENCODE_TOR_NO_BANNER` | `1` = no imprimir el banner ASCII | Útil para scripts |
 
 ### Tests
 

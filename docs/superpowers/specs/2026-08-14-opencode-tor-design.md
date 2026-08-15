@@ -49,7 +49,8 @@ del opencode normal instalado en `~/.opencode/bin`.
 │   ├── opencode-tor          # wrapper ejecutable
 │   └── uninstall-opencode-tor.sh  # desinstalador
 ├── plugins/
-│   └── ip-rotate/            # plugin desplegado (index.ts, src/, package.json, node_modules)
+│   └── ip-rotate/            # plugin desplegado (index.ts, src/, tui-logo.tsx, package.json, node_modules)
+├── tui.json                  # registra el logo TUI (opencode-tor)
 ├── torrc                     # puertos 9050/8118/9051 en 127.0.0.1 + hash del password aleatorio + MaxCircuitDirtiness 86400
 └── opencode.json             # {"plugin": [["file://<abs>/plugins/ip-rotate", {"controlPassword": "<aleatorio>"}]]}
 ```
@@ -81,7 +82,10 @@ aleatorio generado. El generador solo lo empaqueta como plantilla.
 6. Instala el wrapper `opencode-tor` en `~/.opencode-tor/bin/` y lo hace ejecutable.
 7. Instala el desinstalador `uninstall-opencode-tor.sh` en `~/.opencode-tor/bin/`
    (borra el directorio, la línea de PATH y el contenedor docker).
-8. Añade `export PATH=$HOME/.opencode-tor/bin:$PATH` a `.bashrc`/`.zshrc`
+8. Despliega el módulo TUI `tui-logo.tsx` en el dir del plugin y escribe
+   `~/.opencode-tor/tui.json` registrando ese módulo (sustituye el logo de la
+   home del TUI por `opencode-tor`).
+9. Añade `export PATH=$HOME/.opencode-tor/bin:$PATH` a `.bashrc`/`.zshrc`
    (misma lógica que el instalador oficial, incluido `--no-modify-path`).
 
 ### Componente 3 — Wrapper `opencode-tor`
@@ -114,6 +118,11 @@ Recibe los args que se le pasen (p. ej. sin args para el TUI, o `run "..."`,
    La carrera residual (dos wrappers saliendo a la vez) deja a lo sumo un
    contenedor huérfano que el siguiente arranque reusa; el contenedor usa `--rm`,
    así que al pararlo además se elimina.
+6. Imprime un banner ASCII `opencode-tor` (estilo shell, mismo arte que el logo
+   TUI) y exporta también `OPENCODE_TUI_CONFIG=$HOME/.opencode-tor/tui.json`
+   para que un plugin de TUI sustituya el logo de la home por `opencode-tor`.
+   Esto hace visible al usuario que está en el entorno Tor, sin tocar el binario
+   de opencode (sobrevive a cada actualización).
 
 ### Sesiones concurrentes
 

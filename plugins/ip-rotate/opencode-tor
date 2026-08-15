@@ -88,6 +88,17 @@ stop_tor() {
   docker stop "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1 || true
 }
 
+print_banner() {
+  if [ "${OPENCODE_TOR_NO_BANNER:-}" = "1" ]; then return 0; fi
+  local art1 art2 art3
+  art1="█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█    ▀▀▀▀ █▀▀█ █▀▀█"
+  art2="█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀    ██   █  █ █  █ █▀▀▄"
+  art3="▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀    ██   ▀▀▀▄ ▀▀▀▀ █▀▀▄"
+  printf '\033[0;90m%s\033[0m\n' "$art1" >&2
+  printf '\033[0m%s\033[0m\n' "$art2" >&2
+  printf '\033[0;90m%s\033[0m\n' "$art3" >&2
+}
+
 trap stop_tor EXIT
 
 start_tor
@@ -100,5 +111,7 @@ export HTTPS_PROXY="$HTTP_PROXY"
 export ALL_PROXY="$HTTP_PROXY"
 export NO_PROXY="127.0.0.1,localhost,::1"
 export OPENCODE_CONFIG="$OPENCODE_TOR_CONFIG"
+export OPENCODE_TUI_CONFIG="$OPENCODE_TOR_DIR/tui.json"
 
+print_banner
 "$OPENCODE_TOR_BIN" "$@"
