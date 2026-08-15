@@ -9,6 +9,9 @@ export type Config = {
   resume: "reprompt" | "none"
   verifyUrl: string
   errorPatterns: string[]
+  probeUrl: string
+  probeModel: string
+  probeMaxAttempts: number
 }
 
 const DEFAULTS: Config = {
@@ -20,6 +23,9 @@ const DEFAULTS: Config = {
   resume: "reprompt",
   verifyUrl: "https://api.ipify.org",
   errorPatterns: ["429", "rate limit", "too many requests", "free limit reached", "free usage exceeded", "overloaded"],
+  probeUrl: "https://opencode.ai/zen/v1/chat/completions",
+  probeModel: "big-pickle",
+  probeMaxAttempts: 5,
 }
 
 function isString(value: unknown): value is string {
@@ -48,5 +54,8 @@ export function parseConfig(options: PluginOptions = {}): Config {
     resume: resume === "reprompt" || resume === "none" ? resume : DEFAULTS.resume,
     verifyUrl: str("verifyUrl") ?? DEFAULTS.verifyUrl,
     errorPatterns: patterns && patterns.length > 0 ? patterns : DEFAULTS.errorPatterns,
+    probeUrl: str("probeUrl") ?? DEFAULTS.probeUrl,
+    probeModel: str("probeModel") ?? DEFAULTS.probeModel,
+    probeMaxAttempts: num("probeMaxAttempts") ?? DEFAULTS.probeMaxAttempts,
   }
 }

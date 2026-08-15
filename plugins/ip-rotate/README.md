@@ -101,7 +101,18 @@ Con opciones:
 | `maxRotationsPerSession` | `5`                          | Máximo de rotaciones por sesión          |
 | `resume`              | `"reprompt"`                    | Estrategia de reanudación (`"reprompt"` \| `"none"`) |
 | `verifyUrl`           | `https://api.ipify.org`         | URL para verificar la IP de salida       |
-| `errorPatterns`       | `["429", "rate limit", "too many requests", "free limit reached", "overloaded"]` | Patrones que detectan rate limit |
+| `probeUrl`            | `https://opencode.ai/zen/v1/chat/completions` | Endpoint para probar si el exit está limpio |
+| `probeModel`          | `big-pickle`                    | Modelo usado en la prueba de exit limpio |
+| `probeMaxAttempts`    | `5`                             | Máximo de rotaciones NEWNYM con verificación por bloqueo (~12 s cada una) |
+| `errorPatterns`       | `["429", "rate limit", "too many requests", "free limit reached", "free usage exceeded", "overloaded"]` | Patrones que detectan rate limit |
+
+### Rotación con verificación
+
+Al detectar un rate limit, el plugin no reanuda a ciegas: rota la IP y prueba
+el endpoint real (`probeUrl`/`probeModel`) a través del nuevo exit, sin gastar
+apenas tokens (`max_tokens=8`). Solo reanuda la sesión cuando el exit responde;
+si está limitado, rota de nuevo hasta `probeMaxAttempts`. Si agota los
+intentos, se mantiene el error original.
 
 ## Test manual de rotación
 

@@ -3,10 +3,45 @@ import type { Config } from "./config"
 export interface Rotator {
   currentIp(): Promise<string | undefined>
   rotate(): Promise<string | undefined>
+  rotateUntilClean?(): Promise<string | undefined>
 }
 
 export function createRotator(config: Config): Rotator {
   return new TorControlRotator(config)
+}
+
+// Prueba real contra el endpoint del modelo a través del proxy actual, sin
+// gastar apenas tokens (max_tokens=8). true = el exit actual NO está limitado.
+export async function probeModel(config: Config): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
+    try {
+      const response = await fetch(config.probeUrl, {
+        method: "POST",
+        // Seam de test: proxyUrl vacío = conexión directa (sin proxy).
+        ...(config.proxyUrl ? { proxy: config.proxyUrl } : {}),
+        signal: controller.signal,
+        headers: {
+          Authorization: "Bearer public",
+          "Content-Type": "application/json",
+          Connection: "close",
+        },
+        body: JSON.stringify({
+          model: config.probeModel,
+          messages: [{ role: "user", content: "di hola" }],
+          max_tokens: 8,
+        }),
+      })
+      const body = await response.text()
+      if (/FreeUsageLimitError|Rate limit|Too Many|429/i.test(body)) return false
+      return body.includes("chat.completion")
+    } finally {
+      clearTimeout(timeout)
+    }
+  } catch {
+    return false
+  }
 }
 
 async function fetchIp(config: Config): Promise<string | undefined> {
@@ -38,6 +73,22 @@ class TorControlRotator implements Rotator {
 
   async currentIp(): Promise<string | undefined> {
     return fetchIp(this.config)
+  }
+
+  // Rota y verifica contra el endpoint real hasta dar con un exit limpio.
+  // Cada intento cuesta ~12 s (NEWNYM va rate-limitado por Tor a ~10 s).
+  async rotateUntilClean(): Promise<string | undefined> {
+    const current = await this.currentIp()
+    if (current !== undefined && (await probeModel(this.config))) return current
+
+    for (let attempt = 1; attempt <= this.config.probeMaxAttempts; attempt++) {
+      const next = await this.rotate()
+      if (next === undefined) continue
+      console.log(`[ip-rotate] intento ${attempt}: probando exit ${next} contra ${this.config.probeModel}`)
+      if (await probeModel(this.config)) return next
+      console.log(`[ip-rotate] intento ${attempt}: exit ${next} limitado, rotando de nuevo`)
+    }
+    return undefined
   }
 
   async rotate(): Promise<string | undefined> {

@@ -51,7 +51,7 @@ export const server = async (input: PluginInput, options?: IpRotateOptions): Pro
 
       const previous = state.lastKnownIp
       console.log(`[ip-rotate] rate limit detectado en sesión ${sessionID}, rotando IP...`)
-      const next = await rotator.rotate()
+      const next = rotator.rotateUntilClean ? await rotator.rotateUntilClean() : await rotator.rotate()
 
       if (next === undefined) {
         console.log(`[ip-rotate] rotación fallida en sesión ${sessionID}: se mantiene el error original`)
