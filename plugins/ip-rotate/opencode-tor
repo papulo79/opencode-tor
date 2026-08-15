@@ -90,13 +90,14 @@ stop_tor() {
 
 print_banner() {
   if [ "${OPENCODE_TOR_NO_BANNER:-}" = "1" ]; then return 0; fi
-  local art1 art2 art3
-  art1="█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█    ▀▀▀▀ █▀▀█ █▀▀█"
-  art2="█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀    ██   █  █ █  █ █▀▀▄"
-  art3="▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀    ██   ▀▀▀▄ ▀▀▀▀ █▀▀▄"
-  printf '\033[0;90m%s\033[0m\n' "$art1" >&2
-  printf '\033[0m%s\033[0m\n' "$art2" >&2
-  printf '\033[0;90m%s\033[0m\n' "$art3" >&2
+  local art="$OPENCODE_TOR_DIR/plugins/ip-rotate/art/opencode-tor.txt"
+  [ -f "$art" ] || return 0
+  local i=0
+  while IFS= read -r line; do
+    if [ "$i" -eq 1 ]; then printf '\033[0m%s\033[0m\n' "$line" >&2
+    else printf '\033[0;90m%s\033[0m\n' "$line" >&2; fi
+    i=$((i + 1))
+  done < "$art"
 }
 
 trap stop_tor EXIT

@@ -50,6 +50,12 @@ EOF
 cat > "$WORK/tui.json" <<'EOF'
 { "plugin": [] }
 EOF
+mkdir -p "$WORK/plugins/ip-rotate/art"
+cat > "$WORK/plugins/ip-rotate/art/opencode-tor.txt" <<'EOF'
+█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+EOF
 
 # Ejecutar el wrapper con overrides de test y "docker" del stub en PATH.
 OPENCODE_TOR_DIR="$WORK" \

@@ -210,6 +210,11 @@ ejecuta su binario. Imprime un banner ASCII `opencode-tor` antes del TUI, y un
 plugin de TUI sustituye el logo de la home por `opencode-tor` (así sabes que
 estás en el entorno Tor). Al salir, para el contenedor.
 
+El banner del wrapper y el logo de la home del TUI comparten el mismo arte ASCII
+en `plugins/ip-rotate/art/opencode-tor.txt` (única fuente). Para rediseñarlo,
+solo se edita ese fichero y se regenera el instalador con
+`./plugins/ip-rotate/build-install.sh`.
+
 ### Personalización
 
 | Variable | Default | Efecto |

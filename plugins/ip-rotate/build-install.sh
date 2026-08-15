@@ -16,12 +16,14 @@ done
 [ -f "$PLUGIN_DIR/uninstall-opencode-tor.sh" ] || { echo "falta uninstall-opencode-tor.sh" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/tui-logo.tsx" ] || { echo "falta tui-logo.tsx" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/torrc" ] || { echo "falta torrc" >&2; exit 1; }
+[ -f "$PLUGIN_DIR/art/opencode-tor.txt" ] || { echo "falta art/opencode-tor.txt" >&2; exit 1; }
 
 PLUGIN_B64=$(tar -C "$PLUGIN_DIR" -czf - index.ts package.json src | base64 | tr -d '\n')
 WRAPPER_B64=$(base64 < "$PLUGIN_DIR/opencode-tor" | tr -d '\n')
 UNINSTALL_B64=$(base64 < "$PLUGIN_DIR/uninstall-opencode-tor.sh" | tr -d '\n')
 TUI_LOGO_B64=$(base64 < "$PLUGIN_DIR/tui-logo.tsx" | tr -d '\n')
 TORRC_B64=$(base64 < "$PLUGIN_DIR/torrc" | tr -d '\n')
+ART_B64=$(base64 < "$PLUGIN_DIR/art/opencode-tor.txt" | tr -d '\n')
 
 cat > "$OUT" <<'INSTALLER_EOF'
 #!/usr/bin/env bash
@@ -118,6 +120,7 @@ WRAPPER_B64='__WRAPPER_B64__'
 UNINSTALL_B64='__UNINSTALL_B64__'
 TUI_LOGO_B64='__TUI_LOGO_B64__'
 TORRC_B64='__TORRC_B64__'
+ART_B64='__ART_B64__'
 
 PLUGIN_OUT="$INSTALL_DIR/plugins/ip-rotate"
 mkdir -p "$PLUGIN_OUT"
@@ -177,6 +180,9 @@ chmod 755 "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 
 # --- 5c. logo TUI ---
 echo "$TUI_LOGO_B64" | base64 -d > "$PLUGIN_OUT/tui-logo.tsx"
+
+mkdir -p "$PLUGIN_OUT/art"
+echo "$ART_B64" | base64 -d > "$PLUGIN_OUT/art/opencode-tor.txt"
 cat > "$INSTALL_DIR/tui.json" <<JSON
 {
   "plugin": ["./plugins/ip-rotate/tui-logo.tsx"]
@@ -225,6 +231,6 @@ echo ""
 INSTALLER_EOF
 
 # Sustituir los payloads en el instalador generado.
-sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__ART_B64__|'"$ART_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 chmod 755 "$OUT"
 echo "generado: $OUT"

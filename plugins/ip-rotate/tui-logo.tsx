@@ -1,12 +1,10 @@
 /** @jsxImportSource @opentui/solid */
 import { TextAttributes } from "@opentui/core"
+import { readFileSync } from "node:fs"
+import { join } from "node:path"
 import type { TuiPlugin, TuiPluginModule } from "@opencode-ai/plugin/tui"
 
-const art = [
-  "█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█    ▀▀▀▀ █▀▀█ █▀▀█",
-  "█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀    ██   █  █ █  █ █▀▀▄",
-  "▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀    ██   ▀▀▀▄ ▀▀▀▀ █▀▀▄",
-]
+const art = readFileSync(join(import.meta.dir, "art", "opencode-tor.txt"), "utf8").trim().split("\n")
 
 const tui: TuiPlugin = async (api) => {
   api.slots.register({

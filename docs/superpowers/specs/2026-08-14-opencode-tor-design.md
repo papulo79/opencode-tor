@@ -50,6 +50,7 @@ del opencode normal instalado en `~/.opencode/bin`.
 │   └── uninstall-opencode-tor.sh  # desinstalador
 ├── plugins/
 │   └── ip-rotate/            # plugin desplegado (index.ts, src/, tui-logo.tsx, package.json, node_modules)
+│       └── art/opencode-tor.txt  # única fuente del arte ASCII (banner wrapper + logo TUI)
 ├── tui.json                  # registra el logo TUI (opencode-tor)
 ├── torrc                     # puertos 9050/8118/9051 en 127.0.0.1 + hash del password aleatorio + MaxCircuitDirtiness 86400
 └── opencode.json             # {"plugin": [["file://<abs>/plugins/ip-rotate", {"controlPassword": "<aleatorio>"}]]}
@@ -118,11 +119,13 @@ Recibe los args que se le pasen (p. ej. sin args para el TUI, o `run "..."`,
    La carrera residual (dos wrappers saliendo a la vez) deja a lo sumo un
    contenedor huérfano que el siguiente arranque reusa; el contenedor usa `--rm`,
    así que al pararlo además se elimina.
-6. Imprime un banner ASCII `opencode-tor` (estilo shell, mismo arte que el logo
-   TUI) y exporta también `OPENCODE_TUI_CONFIG=$HOME/.opencode-tor/tui.json`
-   para que un plugin de TUI sustituya el logo de la home por `opencode-tor`.
-   Esto hace visible al usuario que está en el entorno Tor, sin tocar el binario
-   de opencode (sobrevive a cada actualización).
+6. Imprime un banner ASCII `opencode-tor` y exporta también
+   `OPENCODE_TUI_CONFIG=$HOME/.opencode-tor/tui.json` para que un plugin de TUI
+   sustituya el logo de la home por `opencode-tor`. Ambos leen el arte del mismo
+   fichero único `$OPENCODE_TOR_DIR/plugins/ip-rotate/art/opencode-tor.txt`
+   (fuente en el repo: `plugins/ip-rotate/art/opencode-tor.txt`, embebida por el
+   instalador). Esto hace visible al usuario que está en el entorno Tor, sin
+   tocar el binario de opencode (sobrevive a cada actualización).
 
 ### Sesiones concurrentes
 
