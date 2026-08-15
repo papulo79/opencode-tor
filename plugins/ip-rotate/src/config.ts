@@ -15,6 +15,7 @@ export type Config = {
   probeModel: string
   probeMaxAttempts: number
   exitPoolPath: string
+  zenBlockPath: string
   localModel?: { providerID: string; modelID: string }
 }
 
@@ -31,6 +32,7 @@ const DEFAULTS: Config = {
   probeModel: "big-pickle",
   probeMaxAttempts: 5,
   exitPoolPath: join(homedir(), ".opencode-tor", "exits-sweep.jsonl"),
+  zenBlockPath: join(homedir(), ".opencode-tor", "zen-block.json"),
 }
 
 function isString(value: unknown): value is string {
@@ -71,6 +73,7 @@ export function parseConfig(options: PluginOptions = {}): Config {
     probeModel: str("probeModel") ?? DEFAULTS.probeModel,
     probeMaxAttempts: num("probeMaxAttempts") ?? DEFAULTS.probeMaxAttempts,
     exitPoolPath: str("exitPoolPath") ?? DEFAULTS.exitPoolPath,
+    zenBlockPath: str("zenBlockPath") ?? DEFAULTS.zenBlockPath,
     localModel,
   }
 }
