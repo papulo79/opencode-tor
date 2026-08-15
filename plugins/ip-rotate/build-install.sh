@@ -200,9 +200,11 @@ sed "s|^HashedControlPassword .*|HashedControlPassword $HASH|" "$INSTALL_DIR/tor
 
 # --- 4. opencode.json ---
 # Provider local opcional: si hay un llama.cpp/OpenAI-compatible sirviendo en
-# 127.0.0.1:8080 (o el modelo GGUF descargado), se registra `local/qwen36`.
+# 127.0.0.1:8080 (o el modelo GGUF descargado), se registra `local/qwen36` y se
+# pasa `localModel` al plugin para el fallback automático de ip-rotate.
 # Condicional para que el instalador siga siendo genérico en otras máquinas.
 LOCAL_PROVIDER=""
+PLUGIN_OPTIONS="{ \"controlPassword\": \"$CONTROL_PASSWORD\" }"
 if curl -s --max-time 2 http://127.0.0.1:8080/health >/dev/null 2>&1 || [ -f "$HOME/llamacpp/models/qwen3.6/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf" ]; then
   LOCAL_PROVIDER=',
   "provider": {
@@ -213,10 +215,11 @@ if curl -s --max-time 2 http://127.0.0.1:8080/health >/dev/null 2>&1 || [ -f "$H
       "models": { "qwen36": { "name": "Qwen3.6 35B-A3B (local)", "tool_call": true } }
     }
   }'
+  PLUGIN_OPTIONS="{ \"controlPassword\": \"$CONTROL_PASSWORD\", \"localModel\": { \"providerID\": \"local\", \"modelID\": \"qwen36\" } }"
 fi
 cat > "$INSTALL_DIR/opencode.json" <<JSON
 {
-  "plugin": [["file://$INSTALL_DIR/plugins/ip-rotate", { "controlPassword": "$CONTROL_PASSWORD" }]]$LOCAL_PROVIDER
+  "plugin": [["file://$INSTALL_DIR/plugins/ip-rotate", $PLUGIN_OPTIONS]]$LOCAL_PROVIDER
 }
 JSON
 chmod 600 "$INSTALL_DIR/torrc" "$INSTALL_DIR/opencode.json"
