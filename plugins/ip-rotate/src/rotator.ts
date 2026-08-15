@@ -90,6 +90,14 @@ class TorControlRotator implements Rotator {
       console.log("[ip-rotate] exit conocido ya no sirve, rotando a ciegas")
     }
 
+    // rotateToKnownGood puede haber dejado ExitNodes/StrictNodes fijado (incluso si
+    // devolvió undefined: el SETCONF puede haberse aplicado y luego fallar la
+    // verificación de IP). Sin este reset, la rotación a ciegas de abajo (SIGNAL
+    // NEWNYM) queda pinneada al mismo exit para siempre, o peor: si ese exit cae,
+    // StrictNodes=1 rompe toda la conectividad. Se resetea incondicionalmente antes
+    // de intentar rotación a ciegas, se haya usado o no rotateToKnownGood con éxito.
+    await this.resetExitNode()
+
     for (let attempt = 1; attempt <= this.config.probeMaxAttempts; attempt++) {
       const next = await this.rotate()
       if (next === undefined) continue
@@ -141,6 +149,10 @@ class TorControlRotator implements Rotator {
 
   private setExitNode(fingerprint: string): Promise<boolean> {
     return this.sendCommands([`SETCONF ExitNodes=${fingerprint} StrictNodes=1`, "SIGNAL NEWNYM"])
+  }
+
+  private resetExitNode(): Promise<boolean> {
+    return this.sendCommands(["SETCONF ExitNodes= StrictNodes=0"])
   }
 
   private sendNewnym(): Promise<boolean> {

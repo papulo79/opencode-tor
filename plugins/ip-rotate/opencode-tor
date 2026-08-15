@@ -10,7 +10,21 @@ OPENCODE_TOR_CONFIG="$OPENCODE_TOR_DIR/opencode.json"
 READY_TIMEOUT="${OPENCODE_TOR_READY_TIMEOUT:-90}"
 HTTP_TUNNEL_PORT=8118
 SOCKS_PORT=9050
+CONTROL_PORT=9051
 EXIT_SWEEP_DAEMON_CMD="${EXIT_SWEEP_DAEMON_CMD:-python3 $OPENCODE_TOR_DIR/plugins/ip-rotate/exit-sweep-daemon.py}"
+
+# Tor dedicado y aislado para el barrido de exits: NUNCA comparte puertos con el
+# Tor de la sesión en vivo (SOCKS_PORT/HTTP_TUNNEL_PORT/CONTROL_PORT arriba).
+# Sin esto, el daemon fijaría ExitNodes/StrictNodes=1 sobre el MISMO Tor que
+# sirve el tráfico de Zen de la sesión activa durante toda una pasada (hasta 30
+# min por defecto), forzando todo ese tráfico por el exit que el daemon esté
+# probando en cada momento -- causando exactamente los rate limits que el
+# plugin existe para evitar, y compitiendo con el propio pin del rotator.
+SWEEP_TOR_CONTAINER="${OPENCODE_TOR_CONTAINER}-sweep"
+SWEEP_SOCKS_PORT=9052
+SWEEP_HTTP_TUNNEL_PORT=8128
+SWEEP_CONTROL_PORT=9061
+SWEEP_TORRC="$OPENCODE_TOR_DIR/torrc.sweep"
 
 if [ ! -x "$OPENCODE_TOR_BIN" ]; then
   echo "opencode-tor: binario no encontrado: $OPENCODE_TOR_BIN (ejecuta el instalador primero)" >&2
@@ -101,6 +115,47 @@ print_banner() {
   done < "$art"
 }
 
+# Genera el torrc del Tor dedicado al sweep a partir del torrc principal,
+# reescribiendo solo los puertos (misma HashedControlPassword: el daemon usa
+# la misma controlPassword ya guardada en opencode.json para ambos Tor).
+generate_sweep_torrc() {
+  sed -e "s/^SocksPort .*/SocksPort 127.0.0.1:$SWEEP_SOCKS_PORT/" \
+      -e "s/^HTTPTunnelPort .*/HTTPTunnelPort 127.0.0.1:$SWEEP_HTTP_TUNNEL_PORT/" \
+      -e "s/^ControlPort .*/ControlPort 127.0.0.1:$SWEEP_CONTROL_PORT/" \
+      "$OPENCODE_TOR_TORRC" > "$SWEEP_TORRC"
+}
+
+start_sweep_tor() {
+  local running
+  running=$(docker inspect -f '{{.State.Running}}' "$SWEEP_TOR_CONTAINER" 2>/dev/null || echo "")
+  if [ "$running" = "true" ]; then
+    echo "opencode-tor: contenedor Tor de sweep ya corriendo"
+    return 0
+  fi
+  generate_sweep_torrc
+  echo "opencode-tor: arrancando contenedor Tor dedicado para el barrido de exits ($SWEEP_TOR_CONTAINER)..."
+  if docker inspect "$SWEEP_TOR_CONTAINER" >/dev/null 2>&1; then
+    docker start "$SWEEP_TOR_CONTAINER" >/dev/null
+  else
+    docker run -d --rm --network host --name "$SWEEP_TOR_CONTAINER" \
+      -v "$SWEEP_TORRC:/tmp/torrc:ro" \
+      --entrypoint tor "$OPENCODE_TOR_IMAGE" -f /tmp/torrc >/dev/null
+  fi
+}
+
+wait_sweep_ready() {
+  local elapsed=0
+  local timeout="${OPENCODE_TOR_SWEEP_READY_TIMEOUT:-30}"
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if port_open "$SWEEP_SOCKS_PORT" && port_open "$SWEEP_HTTP_TUNNEL_PORT"; then
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  return 1
+}
+
 start_exit_sweep_daemon() {
   local lock="$OPENCODE_TOR_DIR/exit-sweep.lock"
   if [ -f "$lock" ]; then
@@ -117,10 +172,29 @@ start_exit_sweep_daemon() {
     echo "opencode-tor: '$1' no disponible, sin barrido de exits en background" >&2
     return 0
   fi
-  setsid "$@" --out "$OPENCODE_TOR_DIR/exits-sweep.jsonl" --lock "$lock" \
-    >"$OPENCODE_TOR_DIR/exit-sweep.log" 2>&1 < /dev/null &
+
+  # Solo se arranca el Tor dedicado al sweep si de verdad vamos a lanzar el
+  # daemon (lock libre y comando disponible) -- no tiene sentido pagar el coste
+  # de un segundo contenedor si el daemon va a salir inmediatamente por lock.
+  start_sweep_tor
+  if [ "${OPENCODE_TOR_SKIP_READY:-}" != "1" ]; then
+    wait_sweep_ready || echo "opencode-tor: Tor de sweep no respondió a tiempo, el daemon reintentará por su cuenta" >&2
+  fi
+
+  # El daemon corre en SU PROPIO Tor (control $SWEEP_CONTROL_PORT, proxy
+  # $SWEEP_HTTP_TUNNEL_PORT), nunca en el de la sesión en vivo. Al terminar su
+  # pasada (bounded, no es un servicio perpetuo) para también su propio
+  # contenedor -- best-effort, en un subshell para no bloquear el arranque.
+  ( setsid "$@" \
+      --out "$OPENCODE_TOR_DIR/exits-sweep.jsonl" \
+      --lock "$lock" \
+      --control-port "$SWEEP_CONTROL_PORT" \
+      --proxy "http://127.0.0.1:$SWEEP_HTTP_TUNNEL_PORT" \
+      >"$OPENCODE_TOR_DIR/exit-sweep.log" 2>&1 < /dev/null
+    docker stop "$SWEEP_TOR_CONTAINER" >/dev/null 2>&1 || true
+  ) &
   disown
-  echo "opencode-tor: barrido de exits lanzado en background"
+  echo "opencode-tor: barrido de exits lanzado en background (Tor dedicado en :$SWEEP_SOCKS_PORT, aislado de la sesión)"
 }
 
 trap stop_tor EXIT

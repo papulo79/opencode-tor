@@ -15,3 +15,21 @@ describe("parseConfig localModel", () => {
     expect(parseConfig({ localModel: { providerID: "local" } }).localModel).toBeUndefined()
   })
 })
+
+describe("parseConfig terminalErrorPatterns", () => {
+  test("default: solo los patrones terminales del límite gratuito", () => {
+    expect(parseConfig({}).terminalErrorPatterns).toEqual(["free limit reached", "free usage exceeded"])
+  })
+
+  test("override por opciones", () => {
+    const config = parseConfig({ terminalErrorPatterns: ["custom terminal"] })
+    expect(config.terminalErrorPatterns).toEqual(["custom terminal"])
+  })
+
+  test("cae al default si el override viene vacío", () => {
+    expect(parseConfig({ terminalErrorPatterns: [] }).terminalErrorPatterns).toEqual([
+      "free limit reached",
+      "free usage exceeded",
+    ])
+  })
+})

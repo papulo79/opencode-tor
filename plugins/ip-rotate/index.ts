@@ -37,12 +37,29 @@ export const server = async (input: PluginInput, options?: IpRotateOptions): Pro
         await resumer.resume(sessionID, model)
       }
     }, Math.max(0, until - Date.now()))
+    // No debe mantener vivo el event loop por sí solo (hasta 24h de espera).
+    revertTimer.unref?.()
   }
 
   scheduleRevert() // rehidrata el timer si el proceso arranca con un bloqueo aún vigente
 
   const fallbackToLocal = async (sessionID: string, event: unknown): Promise<boolean> => {
     if (!config.localModel) return false
+
+    // Guard anti-loop: si la sesión ya está en fallback local, no la reenviamos
+    // de nuevo (evita reprompts infinitos si el propio modelo local emite algo
+    // que casualmente matchee un patrón terminal).
+    if (zenBlock.fallbackSessions().has(sessionID)) {
+      console.log(`[ip-rotate] sesión ${sessionID} ya está en fallback local, ignorando`)
+      return false
+    }
+
+    // El fallback solo se dispara para el error terminal (límite gratuito
+    // diario agotado), nunca para errores transitorios/reintentables (429,
+    // "overloaded", etc.) — esos deben seguir rotando o degradar al error
+    // original, no saltar a local.
+    if (!isIpBlocked(event, config.terminalErrorPatterns)) return false
+
     const retryAfterMs = extractRetryAfterMs(event) ?? DEFAULT_RETRY_AFTER_MS
     const until = Date.now() + retryAfterMs
     zenBlock.block(until)
@@ -54,7 +71,9 @@ export const server = async (input: PluginInput, options?: IpRotateOptions): Pro
   }
 
   return {
-    dispose: async () => {},
+    dispose: async () => {
+      if (revertTimer) clearTimeout(revertTimer)
+    },
     event: async ({ event }) => {
       const properties = (event.properties ?? {}) as Record<string, unknown>
       const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
@@ -70,7 +89,10 @@ export const server = async (input: PluginInput, options?: IpRotateOptions): Pro
 
       if (!isIpBlocked(event, config.errorPatterns)) return
 
-      if (zenBlock.isBlocked()) {
+      // Solo se salta la rotación normal cuando hay a dónde caer (localModel
+      // configurado); si no, el bloqueo global de Zen (p. ej. persistido de una
+      // ejecución anterior) no debe silenciar la rotación de esta sesión.
+      if (config.localModel && zenBlock.isBlocked()) {
         console.log(`[ip-rotate] Zen ya sabido bloqueado, sesión ${sessionID} directa a fallback local`)
         await fallbackToLocal(sessionID, event)
         return

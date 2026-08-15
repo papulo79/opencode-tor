@@ -8,14 +8,24 @@ pasada acotada por presupuesto de tiempo/cantidad, en este orden de prioridad:
 3) revisar exits "limited"/"unreachable"/"mismatch"/"error" (menor prioridad)
 Termina solo al agotar el presupuesto o la cola; el siguiente lanzamiento de
 opencode-tor retoma donde lo dejó (JSONL persistido, mutable por fingerprint).
-Uso: exit-sweep-daemon.py [--budget-minutes N] [--budget-count N] [--out PATH] [--lock PATH]
+
+Por defecto usa el MISMO Tor que la sesión en vivo (puerto de control 9051,
+proxy 8118) por compatibilidad con invocaciones manuales/standalone. Cuando lo
+lanza `opencode-tor`, en cambio, recibe `--control-port`/`--proxy` apuntando a
+un Tor dedicado y aislado del que usa la sesión (ver opencode-tor:
+start_sweep_tor) para no pisar el ExitNodes/proxy que están sirviendo tráfico
+de Zen en ese momento.
+
+Uso: exit-sweep-daemon.py [--budget-minutes N] [--budget-count N] [--out PATH]
+                           [--lock PATH] [--control-port N] [--proxy URL]
 """
 import json, os, signal, socket, subprocess, sys, time, urllib.request
 from pathlib import Path
 
 OPENCODE_TOR_DIR = Path.home() / ".opencode-tor"
-CONTROL = ("127.0.0.1", 9051)
-PROXY = "http://127.0.0.1:8118"
+CONTROL_HOST = "127.0.0.1"
+DEFAULT_CONTROL_PORT = 9051
+DEFAULT_PROXY = "http://127.0.0.1:8118"
 ZEN_URL = "https://opencode.ai/zen/v1/chat/completions"
 ZEN_BODY = json.dumps({"model": "big-pickle", "messages": [{"role": "user", "content": "di hola"}], "max_tokens": 8})
 ONIONOO = "https://onionoo.torproject.org/details?type=relay&running=true&flag=exit"
@@ -33,8 +43,8 @@ class TorControl:
     def __init__(self):
         self.buf = b""
 
-    def connect(self, password: str):
-        self.sock = socket.create_connection(CONTROL, timeout=15)
+    def connect(self, password: str, port: int = DEFAULT_CONTROL_PORT):
+        self.sock = socket.create_connection((CONTROL_HOST, port), timeout=15)
         self.sock.settimeout(15)
         if not self.cmd(f'AUTHENTICATE "{password}"'):
             raise RuntimeError("auth al control de Tor fallida")
@@ -64,8 +74,8 @@ class TorControl:
         self.sock.close()
 
 
-def curl(url: str, timeout: int, data: str | None = None) -> str:
-    cmd = ["curl", "-s", "--max-time", str(timeout), "--proxy", PROXY]
+def curl(url: str, timeout: int, proxy: str = DEFAULT_PROXY, data: str | None = None) -> str:
+    cmd = ["curl", "-s", "--max-time", str(timeout), "--proxy", proxy]
     if data is not None:
         cmd += ["-H", "Authorization: Bearer public", "-H", "Content-Type: application/json", "-d", data]
     cmd.append(url)
@@ -159,6 +169,8 @@ def main() -> int:
     budget_minutes, budget_count = DEFAULT_BUDGET_MINUTES, DEFAULT_BUDGET_COUNT
     out = OPENCODE_TOR_DIR / "exits-sweep.jsonl"
     lock = OPENCODE_TOR_DIR / "exit-sweep.lock"
+    control_port = DEFAULT_CONTROL_PORT
+    proxy = DEFAULT_PROXY
     args = sys.argv[1:]
     while args:
         if args[0] == "--budget-minutes":
@@ -169,6 +181,10 @@ def main() -> int:
             out = Path(args[1]); args = args[2:]
         elif args[0] == "--lock":
             lock = Path(args[1]); args = args[2:]
+        elif args[0] == "--control-port":
+            control_port = int(args[1]); args = args[2:]
+        elif args[0] == "--proxy":
+            proxy = args[1]; args = args[2:]
         else:
             args = args[1:]
 
@@ -191,7 +207,7 @@ def main() -> int:
 
         deadline = time.monotonic() + budget_minutes * 60
         tor = TorControl()
-        tor.connect(control_password())
+        tor.connect(control_password(), control_port)
         counts = {"ok": 0, "limited": 0, "unreachable": 0, "mismatch": 0, "error": 0}
         try:
             for i, fp in enumerate(batch):
@@ -204,19 +220,19 @@ def main() -> int:
                     if tor.cmd(f"SETCONF ExitNodes=${fp} StrictNodes=1"):
                         tor.cmd("SIGNAL NEWNYM")
                         time.sleep(CIRCUIT_WAIT)
-                        ip_body = curl("https://api.ipify.org", 20).strip()
+                        ip_body = curl("https://api.ipify.org", 20, proxy).strip()
                         actual_ip = ip_body or None
                         if expected_ip and actual_ip != expected_ip:
                             verdict = "mismatch"
                         else:
-                            verdict = classify(curl(ZEN_URL, 45, ZEN_BODY))
+                            verdict = classify(curl(ZEN_URL, 45, proxy, ZEN_BODY))
                 except Exception:
                     try:
                         tor.close()
                     except Exception:
                         pass
                     tor = TorControl()
-                    tor.connect(control_password())
+                    tor.connect(control_password(), control_port)
                     verdict = "unreachable"
                 counts[verdict] = counts.get(verdict, 0) + 1
                 known[fp] = {

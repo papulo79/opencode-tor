@@ -11,6 +11,10 @@ export type Config = {
   resume: "reprompt" | "none"
   verifyUrl: string
   errorPatterns: string[]
+  // Subconjunto de errorPatterns que es terminal (el límite gratuito diario de
+  // Zen agotado, no un 429/overloaded transitorio): solo estos disparan el
+  // fallback a localModel. Ver detector.isIpBlocked, reutilizada con esta lista.
+  terminalErrorPatterns: string[]
   probeUrl: string
   probeModel: string
   probeMaxAttempts: number
@@ -28,6 +32,7 @@ const DEFAULTS: Config = {
   resume: "reprompt",
   verifyUrl: "https://api.ipify.org",
   errorPatterns: ["429", "rate limit", "too many requests", "free limit reached", "free usage exceeded", "overloaded"],
+  terminalErrorPatterns: ["free limit reached", "free usage exceeded"],
   probeUrl: "https://opencode.ai/zen/v1/chat/completions",
   probeModel: "big-pickle",
   probeMaxAttempts: 5,
@@ -53,6 +58,9 @@ export function parseConfig(options: PluginOptions = {}): Config {
 
   const resume = str("resume")
   const patterns = Array.isArray(options.errorPatterns) ? options.errorPatterns.filter(isString) : undefined
+  const terminalPatterns = Array.isArray(options.terminalErrorPatterns)
+    ? options.terminalErrorPatterns.filter(isString)
+    : undefined
 
   const localModelInput = options.localModel
   const localModel =
@@ -69,6 +77,8 @@ export function parseConfig(options: PluginOptions = {}): Config {
     resume: resume === "reprompt" || resume === "none" ? resume : DEFAULTS.resume,
     verifyUrl: str("verifyUrl") ?? DEFAULTS.verifyUrl,
     errorPatterns: patterns && patterns.length > 0 ? patterns : DEFAULTS.errorPatterns,
+    terminalErrorPatterns:
+      terminalPatterns && terminalPatterns.length > 0 ? terminalPatterns : DEFAULTS.terminalErrorPatterns,
     probeUrl: str("probeUrl") ?? DEFAULTS.probeUrl,
     probeModel: str("probeModel") ?? DEFAULTS.probeModel,
     probeMaxAttempts: num("probeMaxAttempts") ?? DEFAULTS.probeMaxAttempts,
