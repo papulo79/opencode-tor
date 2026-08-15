@@ -115,6 +115,23 @@ else
 fi
 
 # --- 2. Plugin ---
+# Dependencias duras del entorno: docker es obligatorio en runtime (el wrapper
+# lo requiere para el contenedor Tor); sin bun/npm el plugin no puede resolver
+# @opencode-ai/plugin y no cargará. Fallar pronto y con mensaje claro.
+if ! command -v docker >/dev/null 2>&1; then
+  echo -e "${RED}Error: docker no está instalado o no está en PATH.${NC}" >&2
+  echo -e "${RED}opencode-tor necesita docker para el contenedor Tor. Instálalo (p. ej. 'sudo apt install docker.io') y reintenta.${NC}" >&2
+  exit 1
+fi
+if ! docker info >/dev/null 2>&1; then
+  echo -e "${RED}Error: el daemon de docker no responde (¿arrancado? ¿tu usuario en el grupo docker?).${NC}" >&2
+  exit 1
+fi
+if ! command -v bun >/dev/null 2>&1 && ! command -v npm >/dev/null 2>&1; then
+  echo -e "${RED}Error: ni bun ni npm disponibles; se necesita uno para instalar las dependencias del plugin.${NC}" >&2
+  exit 1
+fi
+
 PLUGIN_B64='__PLUGIN_B64__'
 WRAPPER_B64='__WRAPPER_B64__'
 UNINSTALL_B64='__UNINSTALL_B64__'
@@ -131,9 +148,8 @@ sed 's#"@opencode-ai/plugin": "workspace:\*"#"@opencode-ai/plugin": "latest"#' "
 if command -v bun >/dev/null 2>&1; then
   (cd "$PLUGIN_OUT" && bun install --no-save >/dev/null 2>&1)
 elif command -v npm >/dev/null 2>&1; then
+  echo -e "${ORANGE}Warning: bun no disponible, usando npm como fallback${NC}" >&2
   (cd "$PLUGIN_OUT" && npm install --no-save >/dev/null 2>&1)
-else
-  echo -e "${ORANGE}Warning: ni bun ni npm disponibles; el plugin puede fallar al cargar${NC}" >&2
 fi
 
 # --- 3. Tor control password + torrc ---
