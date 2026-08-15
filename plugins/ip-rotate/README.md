@@ -184,6 +184,18 @@ curl -fsSL https://<host>/install-opencode-tor.sh | bash
 
 Flags: `--version <v>`, `--binary <path>`, `--no-modify-path`.
 
+### Desinstalación
+
+El instalador deja un desinstalador en `~/.opencode-tor/bin/uninstall-opencode-tor.sh`:
+
+```bash
+uninstall-opencode-tor.sh          # pide confirmación
+uninstall-opencode-tor.sh --yes    # sin confirmación
+```
+
+Elimina el directorio `~/.opencode-tor/`, la línea de PATH añadida en
+`.bashrc`/`.zshrc`/`config.fish` y el contenedor docker `ip-rotate-tor`.
+
 ### Uso
 
 ```bash

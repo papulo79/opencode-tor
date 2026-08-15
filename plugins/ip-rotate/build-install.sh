@@ -13,10 +13,12 @@ for f in index.ts package.json src/config.ts src/detector.ts src/rotator.ts src/
   [ -f "$PLUGIN_DIR/$f" ] || { echo "falta $f" >&2; exit 1; }
 done
 [ -f "$PLUGIN_DIR/opencode-tor" ] || { echo "falta opencode-tor" >&2; exit 1; }
+[ -f "$PLUGIN_DIR/uninstall-opencode-tor.sh" ] || { echo "falta uninstall-opencode-tor.sh" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/torrc" ] || { echo "falta torrc" >&2; exit 1; }
 
 PLUGIN_B64=$(tar -C "$PLUGIN_DIR" -czf - index.ts package.json src | base64 | tr -d '\n')
 WRAPPER_B64=$(base64 < "$PLUGIN_DIR/opencode-tor" | tr -d '\n')
+UNINSTALL_B64=$(base64 < "$PLUGIN_DIR/uninstall-opencode-tor.sh" | tr -d '\n')
 TORRC_B64=$(base64 < "$PLUGIN_DIR/torrc" | tr -d '\n')
 
 cat > "$OUT" <<'INSTALLER_EOF'
@@ -111,6 +113,7 @@ fi
 # --- 2. Plugin ---
 PLUGIN_B64='__PLUGIN_B64__'
 WRAPPER_B64='__WRAPPER_B64__'
+UNINSTALL_B64='__UNINSTALL_B64__'
 TORRC_B64='__TORRC_B64__'
 
 PLUGIN_OUT="$INSTALL_DIR/plugins/ip-rotate"
@@ -165,6 +168,10 @@ chmod 600 "$INSTALL_DIR/torrc" "$INSTALL_DIR/opencode.json"
 echo "$WRAPPER_B64" | base64 -d > "$INSTALL_DIR/bin/opencode-tor"
 chmod 755 "$INSTALL_DIR/bin/opencode-tor"
 
+# --- 5b. uninstaller ---
+echo "$UNINSTALL_B64" | base64 -d > "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
+chmod 755 "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
+
 # --- 6. PATH ---
 add_to_path() {
   local config_file="$1" command="$2"
@@ -202,10 +209,11 @@ fi
 echo ""
 echo -e "${MUTED}Instalado en ${NC}$INSTALL_DIR"
 echo -e "${MUTED}Ejecuta: ${NC}opencode-tor${MUTED} (o ${NC}$INSTALL_DIR/bin/opencode-tor${MUTED} si PATH no está actualizado)${NC}"
+echo -e "${MUTED}Desinstala: ${NC}$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 echo ""
 INSTALLER_EOF
 
 # Sustituir los payloads en el instalador generado.
-sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 chmod 755 "$OUT"
 echo "generado: $OUT"

@@ -46,7 +46,8 @@ del opencode normal instalado en `~/.opencode/bin`.
 ~/.opencode-tor/
 ├── bin/
 │   ├── opencode              # copia propia del binario opencode
-│   └── opencode-tor          # wrapper ejecutable
+│   ├── opencode-tor          # wrapper ejecutable
+│   └── uninstall-opencode-tor.sh  # desinstalador
 ├── plugins/
 │   └── ip-rotate/            # plugin desplegado (index.ts, src/, package.json, node_modules)
 ├── torrc                     # puertos 9050/8118/9051 en 127.0.0.1 + hash del password aleatorio + MaxCircuitDirtiness 86400
@@ -78,7 +79,9 @@ aleatorio generado. El generador solo lo empaqueta como plantilla.
 5. Escribe `~/.opencode-tor/opencode.json` con el plugin registrado
    (`file://<abs>/plugins/ip-rotate`) y `controlPassword`.
 6. Instala el wrapper `opencode-tor` en `~/.opencode-tor/bin/` y lo hace ejecutable.
-7. Añade `export PATH=$HOME/.opencode-tor/bin:$PATH` a `.bashrc`/`.zshrc`
+7. Instala el desinstalador `uninstall-opencode-tor.sh` en `~/.opencode-tor/bin/`
+   (borra el directorio, la línea de PATH y el contenedor docker).
+8. Añade `export PATH=$HOME/.opencode-tor/bin:$PATH` a `.bashrc`/`.zshrc`
    (misma lógica que el instalador oficial, incluido `--no-modify-path`).
 
 ### Componente 3 — Wrapper `opencode-tor`
@@ -105,6 +108,9 @@ Recibe los args que se le pasen (p. ej. sin args para el TUI, o `run "..."`,
 5. Al salir del proceso de opencode: para el contenedor Tor solo si no queda
    ningún otro proceso `opencode-tor` vivo (`pgrep -f` sobre el wrapper). Así, en
    sesiones concurrentes el contenedor lo levanta la primera y lo para la última.
+   Para no contarse a sí mismo (el subshell de `$(...)` hereda el cmdline del
+   wrapper y `pgrep -f` lo matchea aunque ya haya muerto), se filtra por `$$` y
+   se comprueba `kill -0` sobre cada PID candidato, descartando los transitorios.
    La carrera residual (dos wrappers saliendo a la vez) deja a lo sumo un
    contenedor huérfano que el siguiente arranque reusa; el contenedor usa `--rm`,
    así que al pararlo además se elimina.
