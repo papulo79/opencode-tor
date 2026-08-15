@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isIpBlocked } from "../src/detector"
+import { isIpBlocked, extractRetryAfterMs } from "../src/detector"
 
 const PATTERNS = ["429", "rate limit", "too many requests", "free limit reached", "overloaded"]
 
@@ -65,5 +65,34 @@ describe("isIpBlocked", () => {
     expect(isIpBlocked(undefined, PATTERNS)).toBe(false)
     expect(isIpBlocked("nope", PATTERNS)).toBe(false)
     expect(isIpBlocked({ type: "session.error" }, PATTERNS)).toBe(false)
+  })
+})
+
+describe("extractRetryAfterMs", () => {
+  test("lee retry-after-ms si está presente", () => {
+    const event = {
+      type: "session.error",
+      properties: {
+        error: { data: { responseHeaders: { "retry-after-ms": "5000" } } },
+      },
+    }
+    expect(extractRetryAfterMs(event)).toBe(5000)
+  })
+
+  test("cae a retry-after en segundos si no hay -ms", () => {
+    const event = {
+      type: "session.error",
+      properties: { error: { data: { responseHeaders: { "retry-after": "10" } } } },
+    }
+    expect(extractRetryAfterMs(event)).toBe(10000)
+  })
+
+  test("undefined sin cabeceras", () => {
+    const event = { type: "session.error", properties: { error: { data: {} } } }
+    expect(extractRetryAfterMs(event)).toBeUndefined()
+  })
+
+  test("undefined para otros tipos de evento", () => {
+    expect(extractRetryAfterMs({ type: "session.status", properties: {} })).toBeUndefined()
   })
 })
