@@ -8,6 +8,14 @@
   </a>
 </p>
 <p align="center">The open source AI coding agent.</p>
+
+> **Fork note — `opencode-tor`**: este fork incluye un lanzador aislado con Tor integrado (rotación de IP ante rate limits de modelos gratuitos). Instalación YOLO:
+>
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/papulo79/opencode-tor/ip-rotate-e2e/plugins/ip-rotate/install-opencode-tor.sh | bash
+> ```
+>
+> Luego ejecuta `opencode-tor`. Más detalles en [`plugins/ip-rotate/README.md`](plugins/ip-rotate/README.md). Requiere docker y bun.
 <p align="center">
   <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
   <a href="https://www.npmjs.com/package/opencode-ai"><img alt="npm" src="https://img.shields.io/npm/v/opencode-ai?style=flat-square" /></a>
