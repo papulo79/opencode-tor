@@ -166,9 +166,24 @@ echo "$TORRC_B64" | base64 -d > "$INSTALL_DIR/torrc"
 sed "s|^HashedControlPassword .*|HashedControlPassword $HASH|" "$INSTALL_DIR/torrc" > "$INSTALL_DIR/torrc.tmp" && mv "$INSTALL_DIR/torrc.tmp" "$INSTALL_DIR/torrc"
 
 # --- 4. opencode.json ---
+# Provider local opcional: si hay un llama.cpp/OpenAI-compatible sirviendo en
+# 127.0.0.1:8080 (o el modelo GGUF descargado), se registra `local/qwen36`.
+# Condicional para que el instalador siga siendo genérico en otras máquinas.
+LOCAL_PROVIDER=""
+if curl -s --max-time 2 http://127.0.0.1:8080/health >/dev/null 2>&1 || [ -f "$HOME/llamacpp/models/qwen3.6/Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf" ]; then
+  LOCAL_PROVIDER=',
+  "provider": {
+    "local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Qwen3.6",
+      "options": { "baseURL": "http://127.0.0.1:8080/v1" },
+      "models": { "qwen36": { "name": "Qwen3.6 35B-A3B (local)", "tool_call": true } }
+    }
+  }'
+fi
 cat > "$INSTALL_DIR/opencode.json" <<JSON
 {
-  "plugin": [["file://$INSTALL_DIR/plugins/ip-rotate", { "controlPassword": "$CONTROL_PASSWORD" }]]
+  "plugin": [["file://$INSTALL_DIR/plugins/ip-rotate", { "controlPassword": "$CONTROL_PASSWORD" }]]$LOCAL_PROVIDER
 }
 JSON
 chmod 600 "$INSTALL_DIR/torrc" "$INSTALL_DIR/opencode.json"
