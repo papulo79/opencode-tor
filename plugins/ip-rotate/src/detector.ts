@@ -17,7 +17,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 function extractMessages(event: SessionEvent): string[] {
   if (event.type === "session.error") {
     const error = asRecord(event.properties.error)
-    if (error && isString(error.message)) return [error.message]
+    if (!error) return []
+    // El schema de opencode serializa los errores como { name, data: { message, ... } }
+    // (NamedError), no como { message }. Se extraen ambas formas más el responseBody,
+    // donde el provider suele devolver el cuerpo con el 429.
+    const data = asRecord(error.data)
+    return [error.message, data?.message, data?.responseBody].filter(isString)
   }
 
   if (event.type === "session.status") {
