@@ -106,6 +106,84 @@ Con opciones:
 | `probeMaxAttempts`    | `5`                             | Máximo de rotaciones NEWNYM con verificación por bloqueo (~12 s cada una) |
 | `errorPatterns`       | `["429", "rate limit", "too many requests", "free limit reached", "free usage exceeded", "overloaded"]` | Patrones que detectan rate limit |
 
+### Barrido de exits y fallback a modelo local
+
+Dos opciones más, pensadas para trabajar juntas con `opencode-tor` (ver más
+abajo) y documentadas en detalle en
+`../../docs/superpowers/specs/2026-08-15-exit-sweep-and-local-fallback.md`:
+
+| Opción         | Default                                    | Descripción                                                    |
+| -------------- | ------------------------------------------- | ---------------------------------------------------------------- |
+| `exitPoolPath` | `~/.opencode-tor/exits-sweep.jsonl`         | JSONL con exits Tor ya probados contra Zen (`verdict: "ok"`/...) |
+| `zenBlockPath` | `~/.opencode-tor/zen-block.json`            | Estado global (`{ "until": <epoch ms> }`) del bloqueo de Zen     |
+| `localModel`   | *(sin default, opt-in)*                    | `{ providerID, modelID }` del modelo local de fallback           |
+
+`exitPoolPath` es el fichero que mantiene el daemon de barrido (ver abajo): el
+rotator lo lee antes de rotar a ciegas y, si hay un exit `ok` que no sea el
+actual, lo fuerza vía `SETCONF ExitNodes=<fp> StrictNodes=1` en vez de un
+`NEWNYM` a ciegas. Si el fichero no existe, está vacío o el `SETCONF` falla,
+cae al comportamiento de rotación ciega ya existente.
+
+`zenBlockPath` guarda el bloqueo global de Zen (compartido entre sesiones) con
+la hora exacta de reset, tomada de la cabecera `retry-after`/`retry-after-ms`
+que Zen ya devuelve (o un default conservador de 24h si no viene). Mientras
+`Date.now() < until`, ninguna sesión nueva intenta rotar: va directa al
+fallback local si está configurado.
+
+`localModel` es opcional (`{ providerID: string; modelID: string }`) y activa
+el fallback: cuando se agotan las rotaciones de una sesión (o Zen ya está
+bloqueado globalmente) y el error es `FreeUsageLimitError`, el plugin reenvía
+el último prompt de la sesión con `model: localModel`, sin perder el
+historial. Cuando el bloqueo de Zen expira, todas las sesiones que cayeron en
+fallback vuelven automáticamente a su modelo Zen anterior. Si `localModel` no
+está configurado, el comportamiento no cambia respecto a hoy (la sesión queda
+en su error original tras agotar rotaciones).
+
+`build-install.sh` configura `localModel` automáticamente cuando detecta un
+servidor `llama.cpp` corriendo en `127.0.0.1:8080` (o el GGUF ya descargado):
+registra el provider `local` en `opencode.json` y añade
+`{ "providerID": "local", "modelID": "qwen36" }` a las opciones del plugin. No
+hace falta ningún paso manual; ver el runbook completo del modelo local en
+`../../docs/superpowers/specs/2026-08-15-local-model-qwen36.md`.
+
+### Daemon de barrido de exits (`exit-sweep-daemon.py`)
+
+`opencode-tor` lanza `plugins/ip-rotate/exit-sweep-daemon.py` en background al
+arrancar (detached vía `setsid`, sobrevive al cierre de opencode). Hace **una
+pasada acotada** por presupuesto, en este orden de prioridad:
+
+1. Revalida los exits ya marcados `"ok"` en `exitPoolPath` (los que usa el
+   rotator ahora mismo).
+2. Prueba exits nuevos (diff contra la lista de Onionoo).
+3. Revisa exits `"limited"`/`"unreachable"`/`"mismatch"`/`"error"` (menor
+   prioridad).
+
+Termina solo al agotar el presupuesto o la cola de esa pasada; el siguiente
+lanzamiento de `opencode-tor` retoma donde lo dejó (el JSONL es mutable por
+fingerprint, no solo `append`). Si ya hay un barrido en curso (PID vivo en
+`exit-sweep.lock`), no lanza uno nuevo.
+
+Flags de presupuesto:
+
+```bash
+exit-sweep-daemon.py --budget-minutes 30 --budget-count 40
+```
+
+- `--budget-minutes N` (default 30) y `--budget-count N` (default 40): lo que
+  se cumpla primero corta la pasada.
+- `--out PATH` / `--lock PATH`: rutas del JSONL y del lock (`opencode-tor` las
+  pasa apuntando a `~/.opencode-tor/`).
+
+La variable de entorno `EXIT_SWEEP_DAEMON_CMD` permite sustituir el comando de
+lanzamiento (por ejemplo para tests, o para apuntar a otro intérprete/ruta):
+
+```bash
+EXIT_SWEEP_DAEMON_CMD="python3 /ruta/alternativa/exit-sweep-daemon.py" opencode-tor
+```
+
+Diseño completo (arquitectura, estado en disco, flujo de fallback y revert) en
+`../../docs/superpowers/specs/2026-08-15-exit-sweep-and-local-fallback.md`.
+
 ### Rotación con verificación
 
 Al detectar un rate limit, el plugin no reanuda a ciegas: rota la IP y prueba
