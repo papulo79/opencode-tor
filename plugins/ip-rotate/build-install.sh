@@ -18,6 +18,7 @@ done
 [ -f "$PLUGIN_DIR/tui-logo.tsx" ] || { echo "falta tui-logo.tsx" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/torrc" ] || { echo "falta torrc" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/art/opencode-tor.txt" ] || { echo "falta art/opencode-tor.txt" >&2; exit 1; }
+[ -f "$PLUGIN_DIR/exit-sweep-daemon.py" ] || { echo "falta exit-sweep-daemon.py" >&2; exit 1; }
 
 PLUGIN_B64=$(tar -C "$PLUGIN_DIR" -czf - index.ts package.json src | base64 | tr -d '\n')
 WRAPPER_B64=$(base64 < "$PLUGIN_DIR/opencode-tor" | tr -d '\n')
@@ -26,6 +27,7 @@ REFRESH_B64=$(base64 < "$PLUGIN_DIR/ip-refresh.sh" | tr -d '\n')
 TUI_LOGO_B64=$(base64 < "$PLUGIN_DIR/tui-logo.tsx" | tr -d '\n')
 TORRC_B64=$(base64 < "$PLUGIN_DIR/torrc" | tr -d '\n')
 ART_B64=$(base64 < "$PLUGIN_DIR/art/opencode-tor.txt" | tr -d '\n')
+DAEMON_B64=$(base64 < "$PLUGIN_DIR/exit-sweep-daemon.py" | tr -d '\n')
 
 cat > "$OUT" <<'INSTALLER_EOF'
 #!/usr/bin/env bash
@@ -155,6 +157,7 @@ REFRESH_B64='__REFRESH_B64__'
 TUI_LOGO_B64='__TUI_LOGO_B64__'
 TORRC_B64='__TORRC_B64__'
 ART_B64='__ART_B64__'
+DAEMON_B64='__DAEMON_B64__'
 
 PLUGIN_OUT="$INSTALL_DIR/plugins/ip-rotate"
 mkdir -p "$PLUGIN_OUT"
@@ -256,6 +259,10 @@ cat > "$INSTALL_DIR/tui.json" <<JSON
 }
 JSON
 
+# --- 5e. exit-sweep daemon ---
+echo "$DAEMON_B64" | base64 -d > "$PLUGIN_OUT/exit-sweep-daemon.py"
+chmod 755 "$PLUGIN_OUT/exit-sweep-daemon.py"
+
 # --- 6. PATH ---
 add_to_path() {
   local config_file="$1" command="$2"
@@ -298,6 +305,6 @@ echo ""
 INSTALLER_EOF
 
 # Sustituir los payloads en el instalador generado.
-sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__REFRESH_B64__|'"$REFRESH_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__ART_B64__|'"$ART_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__REFRESH_B64__|'"$REFRESH_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__ART_B64__|'"$ART_B64"'|; s|__DAEMON_B64__|'"$DAEMON_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 chmod 755 "$OUT"
 echo "generado: $OUT"
