@@ -127,6 +127,10 @@ string; modelID: string }`. `build-install.sh`, que ya detecta llama.cpp
 corriendo en `127.0.0.1:8080` y registra el provider `local` (ver
 `2026-08-15-local-model-qwen36.md`), pasa también esta opción al registrar el
 plugin en `opencode.json` cuando detecta esa condición — sin paso manual.
+El modelo Zen por defecto ya existe en la config actual como `probeModel`
+(`"big-pickle"`, provider `"opencode"`); se reutiliza tal cual como
+`{ providerID: "opencode", modelID: config.probeModel }` para saber a qué
+volver — no hace falta una opción nueva para esto.
 
 **Detección del reset exacto** (`src/detector.ts`): el evento `session.error`
 para `FreeUsageLimitError` incluye `error.data.responseHeaders` (schema
@@ -138,8 +142,25 @@ para `FreeUsageLimitError` incluye `error.data.responseHeaders` (schema
 **Estado global** (`src/state.ts`, persistido en `zen-block.json`):
 - `isZenBlocked(): boolean` — `Date.now() < zenBlockedUntil`.
 - `setZenBlocked(untilMs)` / `clearZenBlocked()`.
-- `localFallbackSessions: Set<string>` — sesiones que están en local por este
-  mecanismo (para revertirlas cuando el bloqueo expire).
+- `localFallbackSessions: Map<string, { providerID: string; modelID: string }>`
+  — sesiones en local por este mecanismo, con el modelo que tenían antes del
+  fallback (para poder revertirlas cuando el bloqueo expire).
+
+**Sin `switchModel`**: `PluginInput.client` (`packages/plugin/src/index.ts:56-57`)
+tipa `client` como `ReturnType<typeof createOpencodeClient>` del **SDK legacy**
+(`@opencode-ai/sdk`, ver `packages/sdk/js/src/client.ts` y su `Session` en
+`packages/sdk/js/src/gen/sdk.gen.ts:431+`), que no incluye `session.switchModel`
+— ese endpoint es exclusivo del SDK v2 (`packages/sdk/js/src/v2`), que el
+plugin no importa. En su lugar, el propio endpoint legacy `session.prompt`
+(`SessionPromptData`, `packages/sdk/js/src/gen/types.gen.ts:2588-2602`) acepta
+`body.model: { providerID, modelID }` junto a `parts`. El cambio de modelo se
+logra reenviando el prompt con ese campo — una sola llamada hace switch +
+resume a la vez, sin API nueva.
+
+`src/resumer.ts` se extiende: `Resumer.resume(sessionID, model?: { providerID:
+string; modelID: string })`; cuando se pasa `model`, `RepromptResumer` lo
+incluye en el `body` de `client.session.prompt`. `NoopResumer.resume` ignora el
+parámetro (sin cambios de comportamiento cuando `resume: "none"`).
 
 **Flujo en `index.ts`**, al detectar rate limit en una sesión:
 
@@ -150,17 +171,19 @@ para `FreeUsageLimitError` incluye `error.data.responseHeaders` (schema
 3. Si se agotan las rotaciones (o el paso 1 saltó directo aquí) y el error es
    terminal (`FreeUsageLimitError`) y `config.localModel` está seteado:
    a. `until = now + (extractRetryAfterMs(event) ?? 24h)`.
-   b. `state.setZenBlocked(until)` + añade `sessionID` a `localFallbackSessions`.
-   c. `client.session.switchModel({ sessionID, model: config.localModel })`.
-   d. `resumer.resume(sessionID)` (reutiliza `RepromptResumer` tal cual:
-      relee el último mensaje de usuario y lo reenvía, ahora contra local).
-   e. Programa un `setTimeout(until - now)` global (uno solo activo a la vez;
+   b. `state.setZenBlocked(until)` + guarda en `localFallbackSessions` el
+      `sessionID` con el modelo previo de la sesión (`config.zenModel`, el
+      modelo Zen por defecto — mismo valor que ya usa `probeModel`,
+      `{ providerID: "opencode", modelID: config.probeModel }`).
+   c. `resumer.resume(sessionID, config.localModel)` — reenvía el último
+      prompt de usuario con `model: config.localModel`.
+   d. Programa un `setTimeout(until - now)` global (uno solo activo a la vez;
       si ya hay uno programado para una hora posterior, no se reemplaza) que,
-      al cumplirse: `clearZenBlocked()`, y para cada `sessionID` en
-      `localFallbackSessions`, `switchModel` de vuelta a Zen (`opencode/big-pickle`
-      o el modelo que tuviera la sesión antes del fallback) y limpia el set.
-4. Si `config.localModel` no está seteado o el `switchModel`/`resume` falla:
-   se degrada al comportamiento actual (la sesión queda en su error original).
+      al cumplirse: `clearZenBlocked()`, y para cada `(sessionID, prevModel)`
+      en `localFallbackSessions`, `resumer.resume(sessionID, prevModel)` para
+      devolverla a Zen, y limpia el mapa.
+4. Si `config.localModel` no está seteado o el `resume` con modelo falla: se
+   degrada al comportamiento actual (la sesión queda en su error original).
 
 **Sesiones nuevas durante el bloqueo**: no hay hook de plugin que intercepte
 antes del primer envío a un provider (`chat.params`/`chat.message` no exponen
@@ -183,9 +206,9 @@ round-trip fallido por sesión nueva durante el bloqueo, aceptable y sin tocar
 - Si `retry-after` no viene en la respuesta, el default de 24h puede ser
   pesimista (bloquea Zen más tiempo del necesario) — preferible a reintentar
   antes de tiempo y gastar otra rotación fallida.
-- El `switchModel` de vuelta a Zen al expirar el bloqueo puede interrumpir una
-  sesión en mitad de una tarea en local; se acepta el riesgo (elegido
-  explícitamente frente a dejarlo en local indefinidamente).
+- El reenvío a Zen al expirar el bloqueo puede interrumpir una sesión en
+  mitad de una tarea en local; se acepta el riesgo (elegido explícitamente
+  frente a dejarlo en local indefinidamente).
 
 ## Alcance fuera (no en este diseño)
 
