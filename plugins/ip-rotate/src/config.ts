@@ -15,6 +15,7 @@ export type Config = {
   probeModel: string
   probeMaxAttempts: number
   exitPoolPath: string
+  localModel?: { providerID: string; modelID: string }
 }
 
 const DEFAULTS: Config = {
@@ -40,12 +41,22 @@ function isNumber(value: unknown): value is number {
   return typeof value === "number"
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object"
+}
+
 export function parseConfig(options: PluginOptions = {}): Config {
   const str = (key: string) => (isString(options[key]) ? options[key] : undefined)
   const num = (key: string) => (isNumber(options[key]) ? options[key] : undefined)
 
   const resume = str("resume")
   const patterns = Array.isArray(options.errorPatterns) ? options.errorPatterns.filter(isString) : undefined
+
+  const localModelInput = options.localModel
+  const localModel =
+    isRecord(localModelInput) && isString(localModelInput.providerID) && isString(localModelInput.modelID)
+      ? { providerID: localModelInput.providerID, modelID: localModelInput.modelID }
+      : undefined
 
   return {
     proxyUrl: str("proxyUrl") ?? DEFAULTS.proxyUrl,
@@ -60,5 +71,6 @@ export function parseConfig(options: PluginOptions = {}): Config {
     probeModel: str("probeModel") ?? DEFAULTS.probeModel,
     probeMaxAttempts: num("probeMaxAttempts") ?? DEFAULTS.probeMaxAttempts,
     exitPoolPath: str("exitPoolPath") ?? DEFAULTS.exitPoolPath,
+    localModel,
   }
 }
