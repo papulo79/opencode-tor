@@ -37,6 +37,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# --- 0. No reinstalar con instancias en ejecución ---
+# Sobrescribir el binario o el wrapper mientras corren falla (ETXTBSY) o
+# corrompe el proceso vivo. Detectar y pedir al usuario que los cierre.
+if command -v pgrep >/dev/null 2>&1; then
+  running=$(pgrep -af "$INSTALL_DIR/bin/" 2>/dev/null | grep -v "^$$\|pgrep" || true)
+  if [ -n "$running" ]; then
+    echo -e "${RED}Error: hay instancias de opencode-tor en ejecución:${NC}" >&2
+    echo "$running" >&2
+    echo -e "${RED}Ciérralas (cada TUI/sesión) y vuelve a lanzar el instalador.${NC}" >&2
+    exit 1
+  fi
+fi
+
 mkdir -p "$INSTALL_DIR/bin" "$INSTALL_DIR/plugins"
 
 # --- 1. opencode binary ---
@@ -45,7 +58,8 @@ if [ -n "$binary_path" ]; then
   if [ ! -f "$binary_path" ]; then
     echo -e "${RED}Error: binary not found at $binary_path${NC}"; exit 1
   fi
-  cp "$binary_path" "$BIN_FILE"
+  # Temporal + mv atómico: cp directo falla con ETXTBSY si hay un opencode-tor corriendo.
+  cp "$binary_path" "$BIN_FILE.tmp" && mv "$BIN_FILE.tmp" "$BIN_FILE"
   chmod 755 "$BIN_FILE"
 else
   raw_os=$(uname -s); os=$(echo "$raw_os" | tr '[:upper:]' '[:lower:]')
@@ -160,15 +174,17 @@ JSON
 chmod 600 "$INSTALL_DIR/torrc" "$INSTALL_DIR/opencode.json"
 
 # --- 5. wrapper ---
-echo "$WRAPPER_B64" | base64 -d > "$INSTALL_DIR/bin/opencode-tor"
+# Todas las escrituras en bin/ van por temporal + mv: si hay un opencode-tor en
+# ejecución, sobrescribir in-place falla (ETXTBSY) o corrompe el script vivo.
+echo "$WRAPPER_B64" | base64 -d > "$INSTALL_DIR/bin/opencode-tor.tmp" && mv "$INSTALL_DIR/bin/opencode-tor.tmp" "$INSTALL_DIR/bin/opencode-tor"
 chmod 755 "$INSTALL_DIR/bin/opencode-tor"
 
 # --- 5b. uninstaller ---
-echo "$UNINSTALL_B64" | base64 -d > "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
+echo "$UNINSTALL_B64" | base64 -d > "$INSTALL_DIR/bin/uninstall-opencode-tor.sh.tmp" && mv "$INSTALL_DIR/bin/uninstall-opencode-tor.sh.tmp" "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 chmod 755 "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 
 # --- 5d. ip-refresh: rotación manual NEWNYM + prueba contra Zen ---
-echo "$REFRESH_B64" | base64 -d > "$INSTALL_DIR/bin/ip-refresh.sh"
+echo "$REFRESH_B64" | base64 -d > "$INSTALL_DIR/bin/ip-refresh.sh.tmp" && mv "$INSTALL_DIR/bin/ip-refresh.sh.tmp" "$INSTALL_DIR/bin/ip-refresh.sh"
 chmod 755 "$INSTALL_DIR/bin/ip-refresh.sh"
 mkdir -p "$INSTALL_DIR/xdg/config/opencode/command"
 cat > "$INSTALL_DIR/xdg/config/opencode/command/ip-refresh.md" <<CMD_EOF
