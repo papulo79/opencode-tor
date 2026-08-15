@@ -117,3 +117,86 @@ describe("ip-rotate event flow", () => {
     expect(rotations).toBe(0)
   })
 })
+
+function mockClientWithPrompts(prompts: Array<Record<string, unknown>>) {
+  const app = { log: async () => ({ data: undefined }) }
+  const session = {
+    messages: async () => ({
+      data: [{ info: { role: "user" }, parts: [{ type: "text", text: "hola" }] }],
+    }),
+    prompt: async (input: Record<string, unknown>) => {
+      prompts.push(input)
+      return { data: {} }
+    },
+  }
+  // A diferencia de mockClient(), aquí sí se envuelve en { client } porque estos tests
+  // ejercitan la cadena completa event -> resumer.resume -> client.session.prompt.
+  return { client: { app, session } } as unknown as Parameters<typeof server>[0]
+}
+
+describe("ip-rotate local fallback", () => {
+  test("cae a local tras agotar rotaciones, sin IP viable", async () => {
+    const prompts: Array<Record<string, unknown>> = []
+    const client = mockClientWithPrompts(prompts)
+    const rotator = { currentIp: async () => "1.2.3.4", rotateUntilClean: async () => undefined }
+    const hooks = await server(client, {
+      cooldownMs: 0,
+      maxRotationsPerSession: 1,
+      resume: "reprompt",
+      localModel: { providerID: "local", modelID: "qwen36" },
+      zenBlockPath: `/tmp/ip-rotate-test-zen-block-${Date.now()}-a.json`,
+      rotator,
+    })
+
+    await hooks.event!(errorEvent("s1"))
+
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0].body).toEqual({
+      parts: [{ type: "text", text: "hola" }],
+      model: { providerID: "local", modelID: "qwen36" },
+    })
+  })
+
+  test("sin localModel configurado, no hay fallback (comportamiento actual)", async () => {
+    const prompts: Array<Record<string, unknown>> = []
+    const client = mockClientWithPrompts(prompts)
+    const rotator = { currentIp: async () => "1.2.3.4", rotateUntilClean: async () => undefined }
+    const hooks = await server(client, {
+      cooldownMs: 0,
+      maxRotationsPerSession: 1,
+      zenBlockPath: `/tmp/ip-rotate-test-zen-block-${Date.now()}-b.json`,
+      rotator,
+    })
+
+    await hooks.event!(errorEvent("s1"))
+
+    expect(prompts).toHaveLength(0)
+  })
+
+  test("sesión nueva durante bloqueo global va directa a local, sin rotar", async () => {
+    let rotations = 0
+    const prompts: Array<Record<string, unknown>> = []
+    const client = mockClientWithPrompts(prompts)
+    const rotator = {
+      currentIp: async () => "1.2.3.4",
+      rotateUntilClean: async () => {
+        rotations++
+        return undefined
+      },
+    }
+    const zenBlockPath = `/tmp/ip-rotate-test-zen-block-${Date.now()}-c.json`
+    const hooks = await server(client, {
+      cooldownMs: 0,
+      maxRotationsPerSession: 1,
+      localModel: { providerID: "local", modelID: "qwen36" },
+      zenBlockPath,
+      rotator,
+    })
+
+    await hooks.event!(errorEvent("s1"))
+    await hooks.event!(errorEvent("s2"))
+
+    expect(rotations).toBe(1) // solo la primera sesión intentó rotar
+    expect(prompts).toHaveLength(2) // ambas cayeron a local
+  })
+})
