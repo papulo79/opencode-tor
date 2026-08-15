@@ -1,9 +1,11 @@
 import type { Config } from "./config"
+import { parseExitPool, pickKnownGoodExit } from "./exit-pool"
 
 export interface Rotator {
   currentIp(): Promise<string | undefined>
   rotate(): Promise<string | undefined>
   rotateUntilClean?(): Promise<string | undefined>
+  rotateToKnownGood?(excludeIp?: string): Promise<string | undefined>
 }
 
 export function createRotator(config: Config): Rotator {
@@ -81,6 +83,13 @@ class TorControlRotator implements Rotator {
     const current = await this.currentIp()
     if (current !== undefined && (await probeModel(this.config))) return current
 
+    const known = await this.rotateToKnownGood(current)
+    if (known !== undefined) {
+      console.log(`[ip-rotate] exit conocido probado: ${known}`)
+      if (await probeModel(this.config)) return known
+      console.log("[ip-rotate] exit conocido ya no sirve, rotando a ciegas")
+    }
+
     for (let attempt = 1; attempt <= this.config.probeMaxAttempts; attempt++) {
       const next = await this.rotate()
       if (next === undefined) continue
@@ -89,6 +98,26 @@ class TorControlRotator implements Rotator {
       console.log(`[ip-rotate] intento ${attempt}: exit ${next} limitado, rotando de nuevo`)
     }
     return undefined
+  }
+
+  async rotateToKnownGood(excludeIp?: string): Promise<string | undefined> {
+    let records
+    try {
+      records = parseExitPool(await Bun.file(this.config.exitPoolPath).text())
+    } catch {
+      return undefined
+    }
+    const candidate = pickKnownGoodExit(records, excludeIp)
+    if (!candidate) return undefined
+
+    const previous = await this.currentIp()
+    const ok = await this.setExitNode(candidate.fp)
+    if (!ok) return undefined
+
+    await new Promise((resolve) => setTimeout(resolve, 10000))
+    const next = await this.currentIp()
+    if (next === undefined || next === previous || next === excludeIp) return undefined
+    return next
   }
 
   async rotate(): Promise<string | undefined> {
@@ -110,7 +139,15 @@ class TorControlRotator implements Rotator {
     return next
   }
 
-  private async sendNewnym(): Promise<boolean> {
+  private setExitNode(fingerprint: string): Promise<boolean> {
+    return this.sendCommands([`SETCONF ExitNodes=${fingerprint} StrictNodes=1`, "SIGNAL NEWNYM"])
+  }
+
+  private sendNewnym(): Promise<boolean> {
+    return this.sendCommands(["SIGNAL NEWNYM"])
+  }
+
+  private async sendCommands(cmds: string[]): Promise<boolean> {
     const { config } = this
     try {
       let buffer = ""
@@ -153,17 +190,21 @@ class TorControlRotator implements Rotator {
           }, 5000)
         })
 
-      const ok = await send(`AUTHENTICATE "${config.controlPassword || ""}"\r\n`)
-      if (!ok) {
+      const authOk = await send(`AUTHENTICATE "${config.controlPassword || ""}"\r\n`)
+      if (!authOk) {
         socket.end()
         socket.close()
         return false
       }
-      const newnym = await send("SIGNAL NEWNYM\r\n")
+      let allOk = true
+      for (const cmd of cmds) {
+        const ok = await send(`${cmd}\r\n`)
+        if (!ok) allOk = false
+      }
       socket.write("QUIT\r\n")
       socket.end()
       socket.close()
-      return newnym
+      return allOk
     } catch {
       return false
     }

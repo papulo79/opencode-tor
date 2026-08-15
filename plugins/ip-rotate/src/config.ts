@@ -1,4 +1,6 @@
 import type { PluginOptions } from "@opencode-ai/plugin"
+import { homedir } from "node:os"
+import { join } from "node:path"
 
 export type Config = {
   proxyUrl: string
@@ -12,6 +14,7 @@ export type Config = {
   probeUrl: string
   probeModel: string
   probeMaxAttempts: number
+  exitPoolPath: string
 }
 
 const DEFAULTS: Config = {
@@ -26,6 +29,7 @@ const DEFAULTS: Config = {
   probeUrl: "https://opencode.ai/zen/v1/chat/completions",
   probeModel: "big-pickle",
   probeMaxAttempts: 5,
+  exitPoolPath: join(homedir(), ".opencode-tor", "exits-sweep.jsonl"),
 }
 
 function isString(value: unknown): value is string {
@@ -41,9 +45,7 @@ export function parseConfig(options: PluginOptions = {}): Config {
   const num = (key: string) => (isNumber(options[key]) ? options[key] : undefined)
 
   const resume = str("resume")
-  const patterns = Array.isArray(options.errorPatterns)
-    ? options.errorPatterns.filter(isString)
-    : undefined
+  const patterns = Array.isArray(options.errorPatterns) ? options.errorPatterns.filter(isString) : undefined
 
   return {
     proxyUrl: str("proxyUrl") ?? DEFAULTS.proxyUrl,
@@ -57,5 +59,6 @@ export function parseConfig(options: PluginOptions = {}): Config {
     probeUrl: str("probeUrl") ?? DEFAULTS.probeUrl,
     probeModel: str("probeModel") ?? DEFAULTS.probeModel,
     probeMaxAttempts: num("probeMaxAttempts") ?? DEFAULTS.probeMaxAttempts,
+    exitPoolPath: str("exitPoolPath") ?? DEFAULTS.exitPoolPath,
   }
 }
