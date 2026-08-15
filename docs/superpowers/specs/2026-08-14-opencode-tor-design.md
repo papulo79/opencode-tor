@@ -182,6 +182,13 @@ opencode-tor --version          # delega al binario opencode
 
 ## Riesgos
 
+- **Verificado 2026-08-15: Zen bloquea los exits de Tor en masa.** Tras 10+
+  rotaciones NEWNYM, todas las IPs de salida devuelven `FreeUsageLimitError`
+  mientras la IP directa funciona. La rotación no desbloquea los modelos
+  gratuitos de Zen; el mecanismo queda para providers que limiten por IP sin
+  banear Tor. Se incluye `bin/ip-refresh.sh` (y comando `/ip-refresh`) para
+  iterar NEWNYM + prueba sin gastar tokens.
+
 - `tor --hash-password` requiere el binario `tor`; en hosts sin Tor nativo se
   delega al contenedor docker (`docker run --rm --entrypoint tor dperson/torproxy --hash-password ...`).
 - Docker no disponible → `opencode-tor` avisa y sale con error claro.

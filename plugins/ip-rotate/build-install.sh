@@ -14,6 +14,7 @@ for f in index.ts package.json src/config.ts src/detector.ts src/rotator.ts src/
 done
 [ -f "$PLUGIN_DIR/opencode-tor" ] || { echo "falta opencode-tor" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/uninstall-opencode-tor.sh" ] || { echo "falta uninstall-opencode-tor.sh" >&2; exit 1; }
+[ -f "$PLUGIN_DIR/ip-refresh.sh" ] || { echo "falta ip-refresh.sh" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/tui-logo.tsx" ] || { echo "falta tui-logo.tsx" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/torrc" ] || { echo "falta torrc" >&2; exit 1; }
 [ -f "$PLUGIN_DIR/art/opencode-tor.txt" ] || { echo "falta art/opencode-tor.txt" >&2; exit 1; }
@@ -21,6 +22,7 @@ done
 PLUGIN_B64=$(tar -C "$PLUGIN_DIR" -czf - index.ts package.json src | base64 | tr -d '\n')
 WRAPPER_B64=$(base64 < "$PLUGIN_DIR/opencode-tor" | tr -d '\n')
 UNINSTALL_B64=$(base64 < "$PLUGIN_DIR/uninstall-opencode-tor.sh" | tr -d '\n')
+REFRESH_B64=$(base64 < "$PLUGIN_DIR/ip-refresh.sh" | tr -d '\n')
 TUI_LOGO_B64=$(base64 < "$PLUGIN_DIR/tui-logo.tsx" | tr -d '\n')
 TORRC_B64=$(base64 < "$PLUGIN_DIR/torrc" | tr -d '\n')
 ART_B64=$(base64 < "$PLUGIN_DIR/art/opencode-tor.txt" | tr -d '\n')
@@ -135,6 +137,7 @@ fi
 PLUGIN_B64='__PLUGIN_B64__'
 WRAPPER_B64='__WRAPPER_B64__'
 UNINSTALL_B64='__UNINSTALL_B64__'
+REFRESH_B64='__REFRESH_B64__'
 TUI_LOGO_B64='__TUI_LOGO_B64__'
 TORRC_B64='__TORRC_B64__'
 ART_B64='__ART_B64__'
@@ -194,6 +197,23 @@ chmod 755 "$INSTALL_DIR/bin/opencode-tor"
 echo "$UNINSTALL_B64" | base64 -d > "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 chmod 755 "$INSTALL_DIR/bin/uninstall-opencode-tor.sh"
 
+# --- 5d. ip-refresh: rotación manual NEWNYM + prueba contra Zen ---
+echo "$REFRESH_B64" | base64 -d > "$INSTALL_DIR/bin/ip-refresh.sh"
+chmod 755 "$INSTALL_DIR/bin/ip-refresh.sh"
+mkdir -p "$INSTALL_DIR/xdg/config/opencode/command"
+cat > "$INSTALL_DIR/xdg/config/opencode/command/ip-refresh.md" <<CMD_EOF
+---
+description: Rota la IP de salida Tor (NEWNYM) hasta encontrar un exit sin rate limit
+agent: build
+---
+
+Ejecuta en bash el script \`$INSTALL_DIR/bin/ip-refresh.sh\` (acepta como
+argumentos opcionales el modelo a probar y el máximo de intentos; por defecto
+big-pickle y 10). Resume el resultado: la IP de salida final y si quedó limpia
+o agotó los intentos. Si encontró un exit limpio, indica al usuario que ya
+puede reintentar su prompt con normalidad.
+CMD_EOF
+
 # --- 5c. logo TUI ---
 echo "$TUI_LOGO_B64" | base64 -d > "$PLUGIN_OUT/tui-logo.tsx"
 
@@ -247,6 +267,6 @@ echo ""
 INSTALLER_EOF
 
 # Sustituir los payloads en el instalador generado.
-sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__ART_B64__|'"$ART_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
+sed 's|__PLUGIN_B64__|'"$PLUGIN_B64"'|; s|__WRAPPER_B64__|'"$WRAPPER_B64"'|; s|__UNINSTALL_B64__|'"$UNINSTALL_B64"'|; s|__REFRESH_B64__|'"$REFRESH_B64"'|; s|__TUI_LOGO_B64__|'"$TUI_LOGO_B64"'|; s|__ART_B64__|'"$ART_B64"'|; s|__TORRC_B64__|'"$TORRC_B64"'|' "$OUT" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"
 chmod 755 "$OUT"
 echo "generado: $OUT"

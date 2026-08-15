@@ -221,6 +221,19 @@ en `plugins/ip-rotate/art/opencode-tor.txt` (única fuente). Para rediseñarlo,
 solo se edita ese fichero y se regenera el instalador con
 `./plugins/ip-rotate/build-install.sh`.
 
+### Limitación conocida: Zen y los exits de Tor
+
+Verificado el 2026-08-15: el provider `opencode` (Zen) devuelve
+`FreeUsageLimitError` para **todos** los exits de Tor probados (10+ rotaciones
+NEWNYM), mientras que la IP directa del usuario responde con normalidad. Es
+decir, Zen bloquea los exits de Tor en masa y la rotación de IP no desbloquea
+sus modelos gratuitos. El mecanismo de rotación funciona y queda disponible
+para providers que limiten por IP sin banear Tor.
+
+Para buscar exits no baneados existe `bin/ip-refresh.sh` (también como comando
+`/ip-refresh` en el TUI): itera NEWNYM + prueba contra Zen hasta N intentos
+sin consumir tokens del modelo. Uso: `ip-refresh.sh [modelo] [max-intentos]`.
+
 ### Personalización
 
 | Variable | Default | Efecto |

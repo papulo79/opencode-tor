@@ -12,5 +12,6 @@ grep -q '__WRAPPER_B64__' "$OUT" && { echo "FAIL: placeholder wrapper sin sustit
 grep -q '__UNINSTALL_B64__' "$OUT" && { echo "FAIL: placeholder uninstaller sin sustituir"; exit 1; }
 grep -q '__TUI_LOGO_B64__' "$OUT" && { echo "FAIL: placeholder tui-logo sin sustituir"; exit 1; }
 grep -q '__ART_B64__' "$OUT" && { echo "FAIL: placeholder art sin sustituir"; exit 1; }
+grep -q '__REFRESH_B64__' "$OUT" && { echo "FAIL: placeholder refresh sin sustituir"; exit 1; }
 grep -q '__TORRC_B64__' "$OUT" && { echo "FAIL: placeholder torrc sin sustituir"; exit 1; }
 echo "PASS: generator smoke test"
