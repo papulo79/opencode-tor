@@ -10,6 +10,7 @@ OPENCODE_TOR_CONFIG="$OPENCODE_TOR_DIR/opencode.json"
 READY_TIMEOUT="${OPENCODE_TOR_READY_TIMEOUT:-90}"
 HTTP_TUNNEL_PORT=8118
 SOCKS_PORT=9050
+EXIT_SWEEP_DAEMON_CMD="${EXIT_SWEEP_DAEMON_CMD:-python3 $OPENCODE_TOR_DIR/plugins/ip-rotate/exit-sweep-daemon.py}"
 
 if [ ! -x "$OPENCODE_TOR_BIN" ]; then
   echo "opencode-tor: binario no encontrado: $OPENCODE_TOR_BIN (ejecuta el instalador primero)" >&2
@@ -100,12 +101,35 @@ print_banner() {
   done < "$art"
 }
 
+start_exit_sweep_daemon() {
+  local lock="$OPENCODE_TOR_DIR/exit-sweep.lock"
+  if [ -f "$lock" ]; then
+    local pid
+    pid=$(cat "$lock" 2>/dev/null || true)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      echo "opencode-tor: barrido de exits ya en curso (pid $pid)"
+      return 0
+    fi
+  fi
+  # shellcheck disable=SC2086
+  set -- $EXIT_SWEEP_DAEMON_CMD
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "opencode-tor: '$1' no disponible, sin barrido de exits en background" >&2
+    return 0
+  fi
+  setsid "$@" --out "$OPENCODE_TOR_DIR/exits-sweep.jsonl" --lock "$lock" \
+    >"$OPENCODE_TOR_DIR/exit-sweep.log" 2>&1 < /dev/null &
+  disown
+  echo "opencode-tor: barrido de exits lanzado en background"
+}
+
 trap stop_tor EXIT
 
 start_tor
 if [ "${OPENCODE_TOR_SKIP_READY:-}" != "1" ]; then
   wait_ready
 fi
+start_exit_sweep_daemon
 
 export HTTP_PROXY="http://127.0.0.1:$HTTP_TUNNEL_PORT"
 export HTTPS_PROXY="$HTTP_PROXY"

@@ -57,12 +57,21 @@ cat > "$WORK/plugins/ip-rotate/art/opencode-tor.txt" <<'EOF'
 ▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
 EOF
 
+# Stub del daemon de sweep: registra su invocación.
+export EXIT_SWEEP_LOG="$WORK/exit-sweep-calls.log"
+cat > "$WORK/fake-daemon.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "daemon args: $*" >> "$EXIT_SWEEP_LOG"
+STUB
+chmod +x "$WORK/fake-daemon.sh"
+
 # Ejecutar el wrapper con overrides de test y "docker" del stub en PATH.
 OPENCODE_TOR_DIR="$WORK" \
 OPENCODE_TOR_BIN="$WORK/bin/opencode" \
 OPENCODE_TOR_CONTAINER="ip-rotate-tor-test" \
 OPENCODE_TOR_SKIP_READY=1 \
 OPENCODE_TOR_KEEP=1 \
+EXIT_SWEEP_DAEMON_CMD="$WORK/fake-daemon.sh" \
 PATH="$WORK:$PATH" \
 "$PWD/opencode-tor" "run" "hola mundo" > "$WORK/out.log" 2>&1 || true
 
@@ -79,3 +88,25 @@ grep -q "█▀▀█" "$WORK/out.log" \
 grep -q "docker run" "$WORK/docker.log" \
   || { echo "FAIL: no se invocó docker run"; cat "$WORK/docker.log"; exit 1; }
 echo "PASS: wrapper test"
+
+grep -q "daemon args: --out $WORK/exits-sweep.jsonl --lock $WORK/exit-sweep.lock" "$EXIT_SWEEP_LOG" \
+  || { echo "FAIL: daemon de sweep no se lanzó con los args esperados"; cat "$EXIT_SWEEP_LOG" 2>&1; exit 1; }
+echo "PASS: daemon de sweep lanzado"
+
+# Segunda invocación con lock ya tomado por un proceso vivo (este propio shell
+# de test, $$): el daemon NO debe relanzarse.
+: > "$EXIT_SWEEP_LOG"
+echo "$$" > "$WORK/exit-sweep.lock"
+OPENCODE_TOR_DIR="$WORK" \
+OPENCODE_TOR_BIN="$WORK/bin/opencode" \
+OPENCODE_TOR_CONTAINER="ip-rotate-tor-test" \
+OPENCODE_TOR_SKIP_READY=1 \
+OPENCODE_TOR_KEEP=1 \
+EXIT_SWEEP_DAEMON_CMD="$WORK/fake-daemon.sh" \
+PATH="$WORK:$PATH" \
+"$PWD/opencode-tor" "run" "hola de nuevo" > "$WORK/out2.log" 2>&1 || true
+
+[ ! -s "$EXIT_SWEEP_LOG" ] || { echo "FAIL: daemon relanzado con lock ya tomado"; cat "$EXIT_SWEEP_LOG"; exit 1; }
+grep -q "barrido de exits ya en curso" "$WORK/out2.log" \
+  || { echo "FAIL: no se avisó del lock activo"; cat "$WORK/out2.log"; exit 1; }
+echo "PASS: lock respetado, daemon no duplicado"
