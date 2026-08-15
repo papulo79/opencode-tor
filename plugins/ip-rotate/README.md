@@ -210,6 +210,12 @@ ejecuta su binario. Imprime un banner ASCII `opencode-tor` antes del TUI, y un
 plugin de TUI sustituye el logo de la home por `opencode-tor` (así sabes que
 estás en el entorno Tor). Al salir, para el contenedor.
 
+El entorno es 100% independiente del opencode normal: el wrapper exporta
+`XDG_CONFIG_HOME`, `XDG_DATA_HOME` y `XDG_STATE_HOME` bajo
+`~/.opencode-tor/xdg/`, así que no comparte config global, sesiones, modelo
+seleccionado ni credenciales. La primera vez hay que hacer login:
+`opencode-tor auth login`.
+
 El banner del wrapper y el logo de la home del TUI comparten el mismo arte ASCII
 en `plugins/ip-rotate/art/opencode-tor.txt` (única fuente). Para rediseñarlo,
 solo se edita ese fichero y se regenera el instalador con

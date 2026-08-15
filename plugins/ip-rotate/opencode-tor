@@ -114,5 +114,12 @@ export NO_PROXY="127.0.0.1,localhost,::1"
 export OPENCODE_CONFIG="$OPENCODE_TOR_CONFIG"
 export OPENCODE_TUI_CONFIG="$OPENCODE_TOR_DIR/tui.json"
 
+# Aislamiento total: opencode-tor no comparte config, datos (auth) ni estado
+# (modelo seleccionado, sesiones) con el opencode normal del usuario.
+export XDG_CONFIG_HOME="$OPENCODE_TOR_DIR/xdg/config"
+export XDG_DATA_HOME="$OPENCODE_TOR_DIR/xdg/data"
+export XDG_STATE_HOME="$OPENCODE_TOR_DIR/xdg/state"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
 print_banner
 "$OPENCODE_TOR_BIN" "$@"

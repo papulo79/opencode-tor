@@ -107,6 +107,11 @@ Recibe los args que se le pasen (p. ej. sin args para el TUI, o `run "..."`,
    `ALL_PROXY=http://127.0.0.1:8118`, `NO_PROXY=127.0.0.1,localhost,::1` y
    `OPENCODE_CONFIG=$HOME/.opencode-tor/opencode.json`. Verificar en el E2E que
    Bun honra `HTTPS_PROXY` en `fetch` para el tráfico TLS vía CONNECT.
+   Además exporta `XDG_CONFIG_HOME`, `XDG_DATA_HOME` y `XDG_STATE_HOME` bajo
+   `$OPENCODE_TOR_DIR/xdg/` (creados por el wrapper): aislamiento total del
+   opencode normal — ni config global, ni sesiones, ni modelo seleccionado
+   (`model.json`), ni credenciales (`auth.json`) se comparten. El usuario hace
+   `opencode-tor auth login` la primera vez.
 4. Ejecuta `$HOME/.opencode-tor/bin/opencode` como proceso hijo con los args
    recibidos (NO `exec`: `exec` reemplazaría el shell y el `trap EXIT` del paso 5
    nunca se ejecutaría). El wrapper hace `wait` y propaga el exit code.
