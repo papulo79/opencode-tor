@@ -103,6 +103,29 @@ Para buscar exits no baneados a mano existe `bin/ip-refresh.sh` (también como
 comando `/ip-refresh` en el TUI): itera NEWNYM + prueba contra Zen hasta N
 intentos sin consumir tokens del modelo. Uso: `ip-refresh.sh [modelo] [max-intentos]`.
 
+### Actualizar tu instalación local
+
+Un solo comando (desde un checkout del repo) regenera el instalador con el
+código actual del plugin y lo reaplica a tu `~/.opencode-tor`: descarga el
+último binario de opencode publicado y redistribuye el plugin, el wrapper y
+el daemon actualizados. No hace falta ningún paso manual ni cerrar sesión
+antes salvo que tengas un `opencode-tor` corriendo (el instalador lo detecta
+y avisa):
+
+```bash
+./plugins/ip-rotate/update-opencode-tor.sh
+```
+
+Acepta los mismos flags que el instalador (`--version <v>`, `--binary <path>`,
+`--no-modify-path`), por ejemplo para fijar una versión concreta de opencode:
+
+```bash
+./plugins/ip-rotate/update-opencode-tor.sh --version 1.18.20
+```
+
+Tu login y sesiones (`~/.opencode-tor/xdg/`) no se tocan — solo se
+regeneran el binario, `torrc`/`opencode.json` y los ficheros del plugin.
+
 ### Personalización
 
 | Variable | Default | Efecto |
@@ -123,6 +146,7 @@ intentos sin consumir tokens del modelo. Uso: `ip-refresh.sh [modelo] [max-inten
 plugins/ip-rotate/test/generator.test.sh
 plugins/ip-rotate/test/wrapper.test.sh
 plugins/ip-rotate/test/uninstall.test.sh
+plugins/ip-rotate/test/update.test.sh
 cd plugins/ip-rotate && bun test
 python3 plugins/ip-rotate/test/sweep-budget.test.py
 ```
