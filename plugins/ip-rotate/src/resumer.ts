@@ -4,7 +4,7 @@ import type { Config } from "./config"
 type Client = PluginInput["client"]
 
 export interface Resumer {
-  resume(sessionID: string): Promise<void>
+  resume(sessionID: string, model?: { providerID: string; modelID: string }): Promise<void>
 }
 
 export function createResumer(config: Config, client: Client): Resumer {
@@ -20,7 +20,7 @@ class NoopResumer implements Resumer {
 class RepromptResumer implements Resumer {
   constructor(private readonly client: Client) {}
 
-  async resume(sessionID: string): Promise<void> {
+  async resume(sessionID: string, model?: { providerID: string; modelID: string }): Promise<void> {
     try {
       const response = await this.client.session.messages({ path: { id: sessionID } })
       const messages = response.data ?? response
@@ -39,8 +39,15 @@ class RepromptResumer implements Resumer {
         return
       }
 
-      await this.client.session.prompt({ path: { id: sessionID }, body: { parts } })
-      console.log(`[ip-rotate] sesión ${sessionID} reanudada con el último prompt`)
+      await this.client.session.prompt({
+        path: { id: sessionID },
+        body: model ? { parts, model } : { parts },
+      })
+      console.log(
+        model
+          ? `[ip-rotate] sesión ${sessionID} reanudada con modelo ${model.providerID}/${model.modelID}`
+          : `[ip-rotate] sesión ${sessionID} reanudada con el último prompt`,
+      )
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.log(`[ip-rotate] no pude reanudar sesión ${sessionID}: ${message}`)

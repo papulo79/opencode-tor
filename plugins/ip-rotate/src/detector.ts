@@ -49,3 +49,25 @@ export function isIpBlocked(event: unknown, patterns: string[]): boolean {
     return lower.some((p) => h.includes(p))
   })
 }
+
+export function extractRetryAfterMs(event: unknown): number | undefined {
+  const record = asRecord(event)
+  if (!record || record.type !== "session.error") return undefined
+  const props = asRecord(record.properties)
+  const error = asRecord(props?.error)
+  const data = asRecord(error?.data)
+  const headers = asRecord(data?.responseHeaders)
+  if (!headers) return undefined
+
+  const ms = headers["retry-after-ms"]
+  if (isString(ms)) {
+    const parsed = Number.parseFloat(ms)
+    if (!Number.isNaN(parsed)) return parsed
+  }
+  const seconds = headers["retry-after"]
+  if (isString(seconds)) {
+    const parsed = Number.parseFloat(seconds)
+    if (!Number.isNaN(parsed)) return parsed * 1000
+  }
+  return undefined
+}
