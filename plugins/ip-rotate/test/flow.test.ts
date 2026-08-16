@@ -262,6 +262,39 @@ describe("ip-rotate local fallback", () => {
     expect(prompts[0].body).toEqual({ parts: [{ type: "text", text: "hola" }] })
   })
 
+  test("con bloqueo global activo y localModel configurado, un error transitorio rota normalmente (no se descarta en silencio)", async () => {
+    let rotations = 0
+    const prompts: Array<Record<string, unknown>> = []
+    const client = mockClientWithPrompts(prompts)
+    const rotator = {
+      currentIp: async () => "1.2.3.4",
+      rotateUntilClean: async () => {
+        rotations++
+        return "5.6.7.8"
+      },
+    }
+    const zenBlockPath = `/tmp/ip-rotate-test-zen-block-${Date.now()}-transient-during-block.json`
+    writeFileSync(zenBlockPath, JSON.stringify({ until: Date.now() + 60000 }))
+
+    // Bloqueo global activo (p. ej. disparado por otra sesión con error terminal)
+    // y localModel configurado, pero ESTE evento es transitorio (429): debe
+    // intentar rotar normalmente, no saltar directo (ni silenciosamente ignorar)
+    // a fallback local.
+    const hooks = await server(client, {
+      cooldownMs: 0,
+      maxRotationsPerSession: 1,
+      localModel: { providerID: "local", modelID: "qwen36" },
+      zenBlockPath,
+      rotator,
+    })
+
+    await hooks.event!(errorEvent("s1", "429 Too Many Requests"))
+
+    expect(rotations).toBe(1)
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0].body).toEqual({ parts: [{ type: "text", text: "hola" }] })
+  })
+
   test("no repite el fallback si la sesión ya está en local (evita loop)", async () => {
     const prompts: Array<Record<string, unknown>> = []
     const client = mockClientWithPrompts(prompts)

@@ -90,9 +90,12 @@ export const server = async (input: PluginInput, options?: IpRotateOptions): Pro
       if (!isIpBlocked(event, config.errorPatterns)) return
 
       // Solo se salta la rotación normal cuando hay a dónde caer (localModel
-      // configurado); si no, el bloqueo global de Zen (p. ej. persistido de una
-      // ejecución anterior) no debe silenciar la rotación de esta sesión.
-      if (config.localModel && zenBlock.isBlocked()) {
+      // configurado) Y el evento en sí es terminal. Un error transitorio
+      // (429/overloaded) en una sesión mientras OTRA sesión ya disparó el
+      // bloqueo global no debe perder su intento de rotación: el bloqueo es
+      // sobre Zen en general, pero rotar la IP de esta sesión puede seguir
+      // resolviendo su propio 429 sin tocar el modelo local para nada.
+      if (config.localModel && zenBlock.isBlocked() && isIpBlocked(event, config.terminalErrorPatterns)) {
         console.log(`[ip-rotate] Zen ya sabido bloqueado, sesión ${sessionID} directa a fallback local`)
         await fallbackToLocal(sessionID, event)
         return
