@@ -1,0 +1,10 @@
+{
+  "name": "opencode-ip-rotate",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.ts",
+  "private": true,
+  "dependencies": {
+    "@opencode-ai/plugin": "workspace:*"
+  }
+}

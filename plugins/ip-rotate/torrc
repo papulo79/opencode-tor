@@ -1,0 +1,6 @@
+SocksPort 127.0.0.1:9050
+HTTPTunnelPort 127.0.0.1:8118
+ControlPort 127.0.0.1:9051
+CookieAuthentication 0
+HashedControlPassword 16:00000000000000000000000000000000000000000000000000000000
+MaxCircuitDirtiness 86400

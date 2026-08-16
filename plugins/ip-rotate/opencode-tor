@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+OPENCODE_TOR_DIR="${OPENCODE_TOR_DIR:-$HOME/.opencode-tor}"
+OPENCODE_TOR_BIN="${OPENCODE_TOR_BIN:-$OPENCODE_TOR_DIR/bin/opencode}"
+OPENCODE_TOR_IMAGE="${OPENCODE_TOR_IMAGE:-dperson/torproxy}"
+OPENCODE_TOR_CONTAINER="${OPENCODE_TOR_CONTAINER:-ip-rotate-tor}"
+OPENCODE_TOR_TORRC="$OPENCODE_TOR_DIR/torrc"
+OPENCODE_TOR_CONFIG="$OPENCODE_TOR_DIR/opencode.json"
+READY_TIMEOUT="${OPENCODE_TOR_READY_TIMEOUT:-90}"
+HTTP_TUNNEL_PORT=8118
+SOCKS_PORT=9050
+CONTROL_PORT=9051
+EXIT_SWEEP_DAEMON_CMD="${EXIT_SWEEP_DAEMON_CMD:-python3 $OPENCODE_TOR_DIR/plugins/ip-rotate/exit-sweep-daemon.py}"
+
+# Tor dedicado y aislado para el barrido de exits: NUNCA comparte puertos con el
+# Tor de la sesión en vivo (SOCKS_PORT/HTTP_TUNNEL_PORT/CONTROL_PORT arriba).
+# Sin esto, el daemon fijaría ExitNodes/StrictNodes=1 sobre el MISMO Tor que
+# sirve el tráfico de Zen de la sesión activa durante toda una pasada (hasta 30
+# min por defecto), forzando todo ese tráfico por el exit que el daemon esté
+# probando en cada momento -- causando exactamente los rate limits que el
+# plugin existe para evitar, y compitiendo con el propio pin del rotator.
+SWEEP_TOR_CONTAINER="${OPENCODE_TOR_CONTAINER}-sweep"
+SWEEP_SOCKS_PORT=9052
+SWEEP_HTTP_TUNNEL_PORT=8128
+SWEEP_CONTROL_PORT=9061
+SWEEP_TORRC="$OPENCODE_TOR_DIR/torrc.sweep"
+
+if [ ! -x "$OPENCODE_TOR_BIN" ]; then
+  echo "opencode-tor: binario no encontrado: $OPENCODE_TOR_BIN (ejecuta el instalador primero)" >&2
+  exit 1
+fi
+if [ ! -f "$OPENCODE_TOR_TORRC" ] || [ ! -f "$OPENCODE_TOR_CONFIG" ]; then
+  echo "opencode-tor: falta torrc o opencode.json en $OPENCODE_TOR_DIR (reinstala)" >&2
+  exit 1
+fi
+if ! command -v docker >/dev/null 2>&1; then
+  echo "opencode-tor: docker no está instalado" >&2
+  exit 1
+fi
+
+start_tor() {
+  local running
+  started_by_us=0
+  running=$(docker inspect -f '{{.State.Running}}' "$OPENCODE_TOR_CONTAINER" 2>/dev/null || echo "")
+  if [ "$running" = "true" ]; then
+    echo "opencode-tor: contenedor Tor ya corriendo"
+    return 0
+  fi
+  echo "opencode-tor: arrancando contenedor Tor ($OPENCODE_TOR_IMAGE)..."
+  if docker inspect "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1; then
+    docker start "$OPENCODE_TOR_CONTAINER" >/dev/null
+    started_by_us=1
+  else
+    docker run -d --rm --network host --name "$OPENCODE_TOR_CONTAINER" \
+      -v "$OPENCODE_TOR_TORRC:/tmp/torrc:ro" \
+      --entrypoint tor "$OPENCODE_TOR_IMAGE" -f /tmp/torrc >/dev/null
+    started_by_us=1
+  fi
+}
+
+port_open() {
+  local port="$1"
+  if command -v nc >/dev/null 2>&1; then
+    nc -z 127.0.0.1 "$port" 2>/dev/null
+  else
+    bash -c "exec 3<>/dev/tcp/127.0.0.1/$port" 2>/dev/null
+  fi
+}
+
+wait_ready() {
+  local elapsed=0
+  echo -n "opencode-tor: esperando a Tor"
+  while [ "$elapsed" -lt "$READY_TIMEOUT" ]; do
+    if port_open "$SOCKS_PORT" && port_open "$HTTP_TUNNEL_PORT"; then
+      echo " listo ($elapsed s)"
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+    echo -n "."
+  done
+  echo " TIMEOUT tras ${READY_TIMEOUT}s" >&2
+  docker logs "$OPENCODE_TOR_CONTAINER" 2>&1 | tail -5 >&2
+  return 1
+}
+
+stop_tor() {
+  if [ "$started_by_us" != "1" ]; then return 0; fi
+  if [ "${OPENCODE_TOR_KEEP:-}" = "1" ]; then return 0; fi
+  local others
+  others=0
+  for pid in $(pgrep -f "opencode-tor" 2>/dev/null || true); do
+    [ "$pid" = "$$" ] && continue
+    kill -0 "$pid" 2>/dev/null || continue
+    others=$((others + 1))
+  done
+  if [ "$others" -gt 0 ]; then
+    echo "opencode-tor: otra sesión opencode-tor sigue activa, no paro el contenedor"
+    return 0
+  fi
+  echo "opencode-tor: parando contenedor Tor"
+  docker stop "$OPENCODE_TOR_CONTAINER" >/dev/null 2>&1 || true
+}
+
+print_banner() {
+  if [ "${OPENCODE_TOR_NO_BANNER:-}" = "1" ]; then return 0; fi
+  local art="$OPENCODE_TOR_DIR/plugins/ip-rotate/art/opencode-tor.txt"
+  [ -f "$art" ] || return 0
+  local i=0
+  while IFS= read -r line; do
+    if [ "$i" -eq 1 ]; then printf '\033[0m%s\033[0m\n' "$line" >&2
+    else printf '\033[0;90m%s\033[0m\n' "$line" >&2; fi
+    i=$((i + 1))
+  done < "$art"
+}
+
+# Genera el torrc del Tor dedicado al sweep a partir del torrc principal,
+# reescribiendo solo los puertos (misma HashedControlPassword: el daemon usa
+# la misma controlPassword ya guardada en opencode.json para ambos Tor).
+generate_sweep_torrc() {
+  sed -e "s/^SocksPort .*/SocksPort 127.0.0.1:$SWEEP_SOCKS_PORT/" \
+      -e "s/^HTTPTunnelPort .*/HTTPTunnelPort 127.0.0.1:$SWEEP_HTTP_TUNNEL_PORT/" \
+      -e "s/^ControlPort .*/ControlPort 127.0.0.1:$SWEEP_CONTROL_PORT/" \
+      "$OPENCODE_TOR_TORRC" > "$SWEEP_TORRC"
+}
+
+start_sweep_tor() {
+  local running
+  running=$(docker inspect -f '{{.State.Running}}' "$SWEEP_TOR_CONTAINER" 2>/dev/null || echo "")
+  if [ "$running" = "true" ]; then
+    echo "opencode-tor: contenedor Tor de sweep ya corriendo"
+    return 0
+  fi
+  generate_sweep_torrc
+  echo "opencode-tor: arrancando contenedor Tor dedicado para el barrido de exits ($SWEEP_TOR_CONTAINER)..."
+  if docker inspect "$SWEEP_TOR_CONTAINER" >/dev/null 2>&1; then
+    docker start "$SWEEP_TOR_CONTAINER" >/dev/null
+  else
+    docker run -d --rm --network host --name "$SWEEP_TOR_CONTAINER" \
+      -v "$SWEEP_TORRC:/tmp/torrc:ro" \
+      --entrypoint tor "$OPENCODE_TOR_IMAGE" -f /tmp/torrc >/dev/null
+  fi
+}
+
+wait_sweep_ready() {
+  local elapsed=0
+  local timeout="${OPENCODE_TOR_SWEEP_READY_TIMEOUT:-30}"
+  while [ "$elapsed" -lt "$timeout" ]; do
+    if port_open "$SWEEP_SOCKS_PORT" && port_open "$SWEEP_HTTP_TUNNEL_PORT"; then
+      return 0
+    fi
+    sleep 2
+    elapsed=$((elapsed + 2))
+  done
+  return 1
+}
+
+start_exit_sweep_daemon() {
+  local lock="$OPENCODE_TOR_DIR/exit-sweep.lock"
+  if [ -f "$lock" ]; then
+    local pid
+    pid=$(cat "$lock" 2>/dev/null || true)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      echo "opencode-tor: barrido de exits ya en curso (pid $pid)"
+      return 0
+    fi
+  fi
+  # shellcheck disable=SC2086
+  set -- $EXIT_SWEEP_DAEMON_CMD
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "opencode-tor: '$1' no disponible, sin barrido de exits en background" >&2
+    return 0
+  fi
+
+  # Solo se arranca el Tor dedicado al sweep si de verdad vamos a lanzar el
+  # daemon (lock libre y comando disponible) -- no tiene sentido pagar el coste
+  # de un segundo contenedor si el daemon va a salir inmediatamente por lock.
+  start_sweep_tor
+  if [ "${OPENCODE_TOR_SKIP_READY:-}" != "1" ]; then
+    wait_sweep_ready || echo "opencode-tor: Tor de sweep no respondió a tiempo, el daemon reintentará por su cuenta" >&2
+  fi
+
+  # El daemon corre en SU PROPIO Tor (control $SWEEP_CONTROL_PORT, proxy
+  # $SWEEP_HTTP_TUNNEL_PORT), nunca en el de la sesión en vivo. Al terminar su
+  # pasada (bounded, no es un servicio perpetuo) para también su propio
+  # contenedor -- best-effort, en un subshell para no bloquear el arranque.
+  ( setsid "$@" \
+      --out "$OPENCODE_TOR_DIR/exits-sweep.jsonl" \
+      --lock "$lock" \
+      --control-port "$SWEEP_CONTROL_PORT" \
+      --proxy "http://127.0.0.1:$SWEEP_HTTP_TUNNEL_PORT" \
+      >"$OPENCODE_TOR_DIR/exit-sweep.log" 2>&1 < /dev/null
+    docker stop "$SWEEP_TOR_CONTAINER" >/dev/null 2>&1 || true
+  ) &
+  disown
+  echo "opencode-tor: barrido de exits lanzado en background (Tor dedicado en :$SWEEP_SOCKS_PORT, aislado de la sesión)"
+}
+
+trap stop_tor EXIT
+
+start_tor
+if [ "${OPENCODE_TOR_SKIP_READY:-}" != "1" ]; then
+  wait_ready
+fi
+start_exit_sweep_daemon
+
+export HTTP_PROXY="http://127.0.0.1:$HTTP_TUNNEL_PORT"
+export HTTPS_PROXY="$HTTP_PROXY"
+export ALL_PROXY="$HTTP_PROXY"
+export NO_PROXY="127.0.0.1,localhost,::1"
+export OPENCODE_CONFIG="$OPENCODE_TOR_CONFIG"
+export OPENCODE_TUI_CONFIG="$OPENCODE_TOR_DIR/tui.json"
+
+# Aislamiento total: opencode-tor no comparte config, datos (auth) ni estado
+# (modelo seleccionado, sesiones) con el opencode normal del usuario.
+export XDG_CONFIG_HOME="$OPENCODE_TOR_DIR/xdg/config"
+export XDG_DATA_HOME="$OPENCODE_TOR_DIR/xdg/data"
+export XDG_STATE_HOME="$OPENCODE_TOR_DIR/xdg/state"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME"
+
+print_banner
+"$OPENCODE_TOR_BIN" "$@"
